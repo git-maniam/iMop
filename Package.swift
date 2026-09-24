@@ -10,16 +10,25 @@ let package = Package(
         .executable(
             name: "iMop",
             targets: ["iMop"]
+        ),
+        .executable(
+            name: "iMopTests",
+            targets: ["iMopTests"]
         )
     ],
     targets: [
+        .target(
+            name: "iMopCore",
+            path: "Sources/iMopCore"
+        ),
         .executableTarget(
             name: "iMop",
-            path: "Sources"
+            dependencies: ["iMopCore"],
+            path: "Sources/iMop"
         ),
-        .testTarget(
+        .executableTarget(
             name: "iMopTests",
-            dependencies: ["iMop"],
+            dependencies: ["iMopCore"],
             path: "Tests/iMopTests"
         )
     ]

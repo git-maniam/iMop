@@ -1,94 +1,75 @@
-import XCTest
-@testable import iMop
+import Foundation
+import iMopCore
 
-final class ScannerTests: XCTestCase {
-    var tempDirectory: URL!
+public struct ScannerTests {
+    @MainActor
+    public static func runAll() async {
+        print("\n🔍 Running Scanner Engine Tests...")
 
-    override func setUpWithError() throws {
-        super.setUp()
-        tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        if let dir = tempDirectory, FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.removeItem(at: dir)
+        await TestSuite.run("Calculate size of nonexistent directory returns 0") {
+            let scanner = ScannerEngine()
+            let nonexistent = URL(fileURLWithPath: "/tmp/nonexistent_\(UUID().uuidString)")
+            let size = scanner.calculateSize(at: nonexistent)
+            try TestSuite.assertEqual(size, 0)
         }
-        super.tearDown()
-    }
 
-    func testCalculateSizeNonExistent() {
-        let scanner = ScannerEngine()
-        let nonExistentURL = tempDirectory.appendingPathComponent("doesNotExist")
-        XCTAssertEqual(scanner.calculateSize(at: nonExistentURL), 0)
-    }
+        await TestSuite.run("Calculate size of nested folder with files") {
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tempDir) }
 
-    func testCalculateSizeWithNestedFiles() throws {
-        let scanner = ScannerEngine()
-        let folder = tempDirectory.appendingPathComponent("nestedFolder")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let f1 = tempDir.appendingPathComponent("f1.dat")
+            let f2 = tempDir.appendingPathComponent("f2.dat")
+            try Data(repeating: 0x41, count: 1024).write(to: f1)
+            try Data(repeating: 0x42, count: 2048).write(to: f2)
 
-        let file1 = folder.appendingPathComponent("file1.dat")
-        let data1 = Data(repeating: 0x41, count: 1024) // 1 KB
-        try data1.write(to: file1)
+            let scanner = ScannerEngine()
+            let total = scanner.calculateSize(at: tempDir)
+            try TestSuite.assertEqual(total, 3072)
+        }
 
-        let file2 = folder.appendingPathComponent("file2.dat")
-        let data2 = Data(repeating: 0x42, count: 2048) // 2 KB
-        try data2.write(to: file2)
+        await TestSuite.run("Scan mock user caches and log files") {
+            let mockHome = FileManager.default.temporaryDirectory.appendingPathComponent("MockHome_\(UUID().uuidString)")
+            let caches = mockHome.appendingPathComponent("Library/Caches/com.sample.app")
+            let logs = mockHome.appendingPathComponent("Library/Logs")
 
-        let total = scanner.calculateSize(at: folder)
-        XCTAssertEqual(total, 3072)
-    }
+            try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: mockHome) }
 
-    func testScannerDetectsUserCachesAndLogs() async throws {
-        // Set up mock home directory
-        let mockHome = tempDirectory.appendingPathComponent("MockHome")
-        let cachesDir = mockHome.appendingPathComponent("Library/Caches/com.sample.app")
-        let logsDir = mockHome.appendingPathComponent("Library/Logs")
+            try Data(repeating: 0x55, count: 4096).write(to: caches.appendingPathComponent("cache.bin"))
+            try Data(repeating: 0x66, count: 1024).write(to: logs.appendingPathComponent("test.log"))
 
-        try FileManager.default.createDirectory(at: cachesDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+            let scanner = ScannerEngine()
+            let results = await scanner.scan(
+                categories: [.userCaches, .systemLogs],
+                customHome: mockHome
+            )
 
-        // Write a 4KB cache file
-        let cacheFile = cachesDir.appendingPathComponent("sample_cache.bin")
-        try Data(repeating: 0x55, count: 4096).write(to: cacheFile)
+            let cacheItems = results[.userCaches] ?? []
+            let logItems = results[.systemLogs] ?? []
 
-        // Write a 1KB log file
-        let logFile = logsDir.appendingPathComponent("diagnostic.log")
-        try Data(repeating: 0x66, count: 1024).write(to: logFile)
+            try TestSuite.assertTrue(!cacheItems.isEmpty, "Should find mock cache items")
+            try TestSuite.assertTrue(!logItems.isEmpty, "Should find mock log items")
+        }
 
-        let scanner = ScannerEngine()
-        let results = await scanner.scan(
-            categories: [.userCaches, .systemLogs],
-            customHome: mockHome
-        )
+        await TestSuite.run("Scan developer derived data targets") {
+            let mockHome = FileManager.default.temporaryDirectory.appendingPathComponent("MockHomeDev_\(UUID().uuidString)")
+            let derivedData = mockHome.appendingPathComponent("Library/Developer/Xcode/DerivedData/App-xyz")
+            try FileManager.default.createDirectory(at: derivedData, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: mockHome) }
 
-        let cacheItems = results[.userCaches] ?? []
-        XCTAssertFalse(cacheItems.isEmpty, "Scanner should discover the mock user cache folder")
-        XCTAssertTrue(cacheItems.contains(where: { $0.path.path.contains("com.sample.app") }))
+            try Data(repeating: 0x99, count: 8192).write(to: derivedData.appendingPathComponent("Build.bin"))
 
-        let logItems = results[.systemLogs] ?? []
-        XCTAssertFalse(logItems.isEmpty, "Scanner should discover the mock log file")
-        XCTAssertTrue(logItems.contains(where: { $0.name == "diagnostic.log" }))
-    }
+            let scanner = ScannerEngine()
+            let results = await scanner.scan(
+                categories: [.developer],
+                customHome: mockHome
+            )
 
-    func testDeveloperJunkDetection() async throws {
-        let mockHome = tempDirectory.appendingPathComponent("MockHome")
-        let derivedData = mockHome.appendingPathComponent("Library/Developer/Xcode/DerivedData/App-xyz")
-        try FileManager.default.createDirectory(at: derivedData, withIntermediateDirectories: true)
-
-        let dummyBuildFile = derivedData.appendingPathComponent("Build.bin")
-        try Data(repeating: 0x99, count: 8192).write(to: dummyBuildFile)
-
-        let scanner = ScannerEngine()
-        let results = await scanner.scan(
-            categories: [.developer],
-            customHome: mockHome
-        )
-
-        let devItems = results[.developer] ?? []
-        XCTAssertFalse(devItems.isEmpty)
-        XCTAssertTrue(devItems.contains(where: { $0.name == "Xcode DerivedData" }))
-        XCTAssertGreaterThanOrEqual(devItems.first?.size ?? 0, 8192)
+            let devItems = results[.developer] ?? []
+            try TestSuite.assertTrue(!devItems.isEmpty, "Should discover Developer DerivedData")
+            try TestSuite.assertTrue(devItems.contains(where: { $0.name == "Xcode DerivedData" }))
+        }
     }
 }

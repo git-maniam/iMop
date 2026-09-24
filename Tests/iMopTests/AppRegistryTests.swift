@@ -1,31 +1,33 @@
-import XCTest
-@testable import iMop
+import Foundation
+import iMopCore
 
-final class AppRegistryTests: XCTestCase {
-    func testProtectedVendorNamesAreGuarded() {
-        // Essential vendors and command-line tools should be protected from being flagged as remnants
-        XCTAssertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Apple"))
-        XCTAssertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Google"))
-        XCTAssertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Microsoft"))
-        XCTAssertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Code"))
-        XCTAssertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Docker"))
-        XCTAssertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: ".config"))
-        XCTAssertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "com.apple.Safari"))
-    }
+public struct AppRegistryTests {
+    @MainActor
+    public static func runAll() async {
+        print("\n📱 Running App Registry & Safety Tests...")
 
-    func testUnknownRemnantIsCandidate() {
-        // A dead reverse-DNS bundle that isn't protected and not installed
-        let candidateName = "com.uninstalleddeveloper.obsoletejunk"
-        XCTAssertFalse(FileSafetyRules.isProtectedRemnantCandidate(name: candidateName))
-    }
+        await TestSuite.run("Protected vendor and tool names are guarded") {
+            try TestSuite.assertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Apple"))
+            try TestSuite.assertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Google"))
+            try TestSuite.assertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Microsoft"))
+            try TestSuite.assertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Docker"))
+            try TestSuite.assertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "Code"))
+            try TestSuite.assertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: ".config"))
+            try TestSuite.assertTrue(FileSafetyRules.isProtectedRemnantCandidate(name: "com.apple.Safari"))
+        }
 
-    func testAppRegistryIndexing() {
-        let registry = AppRegistryService()
-        registry.indexInstalledApplications()
+        await TestSuite.run("Uninstalled third-party bundle ID is recognized as candidate") {
+            let deadCandidate = "com.uninstalleddeveloper.obsoletejunk"
+            try TestSuite.assertFalse(FileSafetyRules.isProtectedRemnantCandidate(name: deadCandidate))
+        }
 
-        // Built-in macOS apps like Finder should always be recognized
-        let isFinderInstalled = registry.isAppInstalled(nameOrBundleID: "com.apple.finder") ||
-                                registry.isAppInstalled(nameOrBundleID: "Finder")
-        XCTAssertTrue(isFinderInstalled, "System apps like Finder should be indexed as installed")
+        await TestSuite.run("AppRegistry indexes active system apps") {
+            let registry = AppRegistryService()
+            registry.indexInstalledApplications()
+
+            let isFinderOrSystemInstalled = registry.isAppInstalled(nameOrBundleID: "com.apple.finder") ||
+                                           registry.isAppInstalled(nameOrBundleID: "finder")
+            try TestSuite.assertTrue(isFinderOrSystemInstalled, "System apps like Finder must be indexed")
+        }
     }
 }
