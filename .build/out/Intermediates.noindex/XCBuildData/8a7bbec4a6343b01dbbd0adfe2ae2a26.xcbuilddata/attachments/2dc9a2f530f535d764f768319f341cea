@@ -1,0 +1,249 @@
+{
+  "" : {
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMop-primary.dia",
+    "emit-module-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMop-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMop-primary-emit-module.dia",
+    "pch" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMop-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMop-primary.swiftdeps"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/App/AppState.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppState~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/App/iMopApp.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/iMopApp~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Models/DiskUsage.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DiskUsage~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Models/JunkCategory.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkCategory~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Models/JunkItem.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/JunkItem~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Models/ScanProgress.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScanProgress~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Services/AppRegistryService.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/AppRegistryService~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Services/DeletionService.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DeletionService~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Services/PermissionService.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/PermissionService~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Services/ScannerEngine.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ScannerEngine~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Services/SystemHealthService.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SystemHealthService~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Utils/ByteFormatter.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ByteFormatter~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Utils/FileSafetyRules.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileSafetyRules~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/ViewModels/CategoryDetailViewModel.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailViewModel~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/ViewModels/DashboardViewModel.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardViewModel~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/CategoryDetailView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryDetailView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/CompletionModalView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CompletionModalView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/Components/CategoryCardView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/CategoryCardView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/Components/FileItemRowView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/FileItemRowView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/Components/StorageGaugeView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/StorageGaugeView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/ConfirmationModalView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/ConfirmationModalView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/DashboardView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/DashboardView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/MainView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/MainView~partial.swiftmodule"
+  },
+  "/Users/rsubramaniam/Projects/iMop/Sources/Views/SidebarView.swift" : {
+    "const-values" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView.swiftconstvalues",
+    "dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView.d",
+    "diagnostics" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView.dia",
+    "index-unit-output-path" : "/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView.o",
+    "llvm-bc" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView.bc",
+    "object" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView.o",
+    "swift-dependencies" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView.swiftdeps",
+    "swiftmodule" : "/Users/rsubramaniam/Projects/iMop/.build/out/Intermediates.noindex/iMop.build/Debug/iMop-p.build/Objects-normal/arm64/SidebarView~partial.swiftmodule"
+  }
+}

@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'AllExcludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'iMop-product' in project 'iMop'
+Target 'iMop-product' in project 'iMop' (no dependencies)

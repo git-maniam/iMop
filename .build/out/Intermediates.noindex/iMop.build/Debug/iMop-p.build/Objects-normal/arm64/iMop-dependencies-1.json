@@ -1,0 +1,679 @@
+[
+  {
+    "isFramework" : true,
+    "moduleName" : "Accessibility",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Accessibility-2XJTEX30A1KTN.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "AppKit",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/AppKit-2F8PQUDPHGZVE.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "ColorSync",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ColorSync-1F6X41BIS6UEZ.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "Combine",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Combine-2Z3EALB1XL16X.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "CoreAudio",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreAudio-3LZT6Y8FCALVP.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreData",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreData-1LNLZ3JM987Z9.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "CoreFoundation",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreFoundation-3EX3NNBU07AOE.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreGraphics",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreGraphics-2OQQX2X74JR7H.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "CoreImage",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreImage-3U8ZWMTNFQFXU.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreMedia",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreMedia-WVWNY1MEMW1X.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreText",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreText-3AJKHTKGOHYBQ.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreTransferable",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreTransferable-3NC1GU4R2259W.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreVideo",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreVideo-2XBYNBW01FK9O.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Darwin",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Darwin-PLEGA8QS6VXM.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "DataDetection",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/DataDetection-1J2P1TDG4OUGH.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "DeveloperToolsSupport",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/DeveloperToolsSupport-29ZXPJK1WLFUI.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Dispatch",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Dispatch-2CSG9YO7EHGAI.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "Foundation",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Foundation-2DA57AFGJCIN.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "IOKit",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/IOKit-24Z39RAR9VPYJ.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "ImageIO",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ImageIO-1AUCT1EL357UG.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Metal",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Metal-1EM1EH26XD5IQ.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "OSLog",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/OSLog-A5H7F60U7OOF.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "ObjectiveC",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ObjectiveC-1W2VNZ6HQ7IUP.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Observation",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Observation-2DHCR3XJSZDAM.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "QuartzCore",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/QuartzCore-34VYO7KE40L9D.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Spatial",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Spatial-5DK0W4W6UG0D.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Swift",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Swift-27HST9W8YY05P.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "SwiftOnoneSupport",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/SwiftOnoneSupport-22MZF5Z5DTFH.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "SwiftUI",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/SwiftUI-1AXRVDO9ITZ79.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "SwiftUICore",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/SwiftUICore-23441XDJGX9PR.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "Symbols",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Symbols-8ZKPZQQX9V7Y.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Synchronization",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Synchronization-O2D0QZRWPHG7.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "System",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/System-3BH2VH5QAXGDY.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "UniformTypeIdentifiers",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/UniformTypeIdentifiers-3U14XMF2ZKSY9.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "XPC",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/XPC-3QDJPFJ1J5ATF.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_Builtin_float",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_float-3S7GDU9DOQMSW.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_Concurrency",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Concurrency-1SF748NVP8AI8.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation1",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_DarwinFoundation1-1YPWJOUKFYDZ0.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation2",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_DarwinFoundation2-3U6O9L5XL08PZ.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation3",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_DarwinFoundation3-1SM340QTMO2CU.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_StringProcessing",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_StringProcessing-LFR496DVN1PZ.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "os",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/os-1FDAHBSJU4M9E.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "simd",
+    "modulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/simd-1G2UGM72666F3.swiftmodule"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/Accessibility.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Accessibility-EM3087HL749JMGR7W9JBCLC8F.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Accessibility"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/AppKit.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/AppKit-1PJKENIAOYAPJZ0FVOI1WWK3V.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "AppKit"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/ApplicationServices.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ApplicationServices-C7PFRQNWMN5Y5VRWP2ZQ04K70.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ApplicationServices"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CFNetwork.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CFNetwork-G37HXJ7B8O742Y1993ZD7UV1.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CFNetwork"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/cups.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CUPS-31G2UHO4U3QY4MFW9LJME751K.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CUPS"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/ColorSync.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ColorSync-AFRZMNXWRA44JC3DQGX6FJHDH.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ColorSync"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreAudio.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreAudio-JEL8IMTNSVEE7ZQ7A8IXUQMD.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreAudio"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreAudioTypes.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreAudioTypes-5Y2WN1H7MULAYBNV627S6TZES.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreAudioTypes"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreData.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreData-F2LACQG56XSXYAO8KQ3I1MVKD.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreData"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreFoundation.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreFoundation-ARI5EOJ6V7LR80QKQWIYU9SJP.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreFoundation"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreGraphics.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreGraphics-EVZP1MZFAYU89QVII8T6YOEJS.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreGraphics"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreImage.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreImage-61VB57J73QDFNKWWONNWRZ7R9.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreImage"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreMedia.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreMedia-F0J5YGJY7X8F4XUO8OMEH7NJN.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreMedia"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreServices.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreServices-7V81ZLGKFD46M7R7TGETP18MH.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreServices"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreText.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreText-580BBXIET4E0JC52PYAQ26W5B.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreText"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreTransferable.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreTransferable-EZA27IAXNXF57FUPDW5TQX8RM.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreTransferable"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/CoreVideo.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/CoreVideo-W6IIGFZNTOKE9NSFCNB6INS8.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreVideo"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/Darwin.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Darwin-EURZHGNDY9JMFI0MU6AS5RZRC.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Darwin"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/DataDetection.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/DataDetection-5SK9GPOBXSRFARUT5L6Z3HY3A.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "DataDetection"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/DeveloperToolsSupport.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/DeveloperToolsSupport-B8322CJQM98D94TBKKF4DEF2M.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "DeveloperToolsSupport"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/DiskArbitration.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/DiskArbitration-DYFI1YT76BGHBASJYX0BR20NP.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "DiskArbitration"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/dispatch.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Dispatch-47CX4CDM2SJK4R1GSC7W4CKKB.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Dispatch"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/Foundation.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Foundation-26B18DM9P38JPXAYF3R4OKWWD.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Foundation"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/IOKit.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/IOKit-6RNOPBXSWWBJ2IC0FTNYY0N5F.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "IOKit"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/IOSurface.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/IOSurface-9JSFETHHFOTQS68PEV0SQNF0B.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "IOSurface"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/ImageIO.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ImageIO-2AHKYUAQ0D8RBFYNB6X3ZUC0V.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ImageIO"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/DarwinBasic.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/MachO-EAJR1F06WOJIUMTDL6H4B4V19.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "MachO"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/Metal.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Metal-DRBOM6ABFNC46C9T6S92Z0WT7.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Metal"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/OSLog.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/OSLog-1112VOB8NJS7IMP0BO2MEJER7.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "OSLog"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/ObjectiveC.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ObjectiveC-5C3MGR1Y6TM1QGSPUM1BWD3AH.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ObjectiveC"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/OpenGL.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/OpenGL-8TIGGH1743YJZ61S82TO3V5G7.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "OpenGL"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/QuartzCore.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/QuartzCore-3N3ZM2I7XV3Y5HCTNVBG3QW5G.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "QuartzCore"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/Security.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Security-DY3AM01JG4538N7XIU98WMQ0B.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Security"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/Spatial\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Spatial-6J7G46W3YMWOWH49IY9ZX4GT1.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Spatial"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/lib\/swift\/shims\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/SwiftShims-6YRPDP52QRBYWORDO50CLDIXJ.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SwiftShims"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/SwiftUI.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/SwiftUI-9HTOFBHJ6QEX26LTZMBGAPZD0.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SwiftUI"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/SwiftUICore.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/SwiftUICore-9LM67VC9A5IYJEJDLXE5W20MD.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SwiftUICore"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/Symbols.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/Symbols-CN3KC7GSU93Q7R7C8ODEQNXKU.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Symbols"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/System\/Library\/Frameworks\/UniformTypeIdentifiers.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/UniformTypeIdentifiers-22FL6F91BPP0GJGX8YLPWRT68.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "UniformTypeIdentifiers"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/xpc.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/XPC-8UWPQE4NZQMJQLKCHN3R9ICMH.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "XPC"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/DarwinFoundation1.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_AvailabilityInternal-56UHZG4GCUM3V7DIWJ6HM8J1B.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_AvailabilityInternal"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_float-DM6FSMPB6G0UXD6HLC8YMTTVH.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_float"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_intrinsics-9A5R7UN2O5JTKOIGBE4LB3Q8B.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_intrinsics"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_inttypes-5EDDBDLT9DH0BZEV8YFYAP7XS.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_inttypes"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_limits-AQFT6XSTNZV7T7L9CXYPX90XU.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_limits"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_stdarg-EC949CK75L7758E5RUOJ5MTSD.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdarg"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_stdatomic-E384EIXGEDWVBIOEMNJPTKZ1P.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdatomic"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_stdbool-2ZVB0WLMZLY26GDVC4EP8TW2N.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdbool"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_stddef-6AT0F4LELWJFULEB16NMLSZI.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stddef"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_stdint-6V0KDRL93BRQSSO8ABLXT08VH.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdint"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_Builtin_tgmath-1C7W59M4VMA4JEWWI2KTYIVSL.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_tgmath"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/DarwinFoundation1.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_DarwinFoundation1-7W3ZBBNYL6IORFFFB2RXCQTRL.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation1"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/DarwinFoundation2.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_DarwinFoundation2-6J48Z2FT9VB79A262QCG23G4Q.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation2"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/DarwinFoundation3.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_DarwinFoundation3-CBNL0BV6QPS40A81R7Y0VU736.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation3"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/lib\/swift\/shims\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/_SwiftConcurrencyShims-7ZE7NOOQFJSJOCB1KPOWJGGKC.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_SwiftConcurrencyShims"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/launch.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/launch-7H8HIPP258SZTJZGTR6Q9QWMT.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "launch"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/libDER\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/libDER-C05EX0ZDD025305VPSZGD52YG.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "libDER"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/libkern.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/libkern-9JPGHS3QFY8FTBLXVF4TNKXKT.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "libkern"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/os.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/os-DLMFKAG7N8W581K1VUZFX5DGL.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "os"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/os.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/os_object-C5NPUQJF6FM989IYNFTU1PM51.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "os_object"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/os.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/os_workgroup-DLGRVQZNLO36LBTPBUSMMWER.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "os_workgroup"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ptrauth-1T1VV3YYXH4UF8PRYD8HAMVUQ.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ptrauth"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/usr\/lib\/clang\/21\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/ptrcheck-DKHTIBZGZ170FRQKDZUNEI9AA.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ptrcheck"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/simd\/module.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/simd-7L3VSE43V2QFS0VS3RXXS7MCI.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "simd"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/c_standard_library.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/string_h-4K145WUL3K5AZ16QJZRDJM8UI.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "string_h"
+  },
+  {
+    "clangModuleMapPath" : "\/Library\/Developer\/CommandLineTools\/SDKs\/MacOSX27.0.sdk\/usr\/include\/DarwinFoundation2.modulemap",
+    "clangModulePath" : "\/Users\/rsubramaniam\/Projects\/iMop\/.build\/out\/SDKExplicitPrecompiledModules\/sys_types-BD8KMA1VX9C8K45O3FN5PRP0E.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "sys_types"
+  }
+]
