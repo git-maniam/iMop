@@ -5,7 +5,19 @@ import SwiftUI
 public struct iMopApp: App {
     private let appState = AppState()
 
-    public init() {}
+    public init() {
+        configureAppIcon()
+    }
+
+    private func configureAppIcon() {
+        if let iconUrl = Bundle.main.url(forResource: "AppIcon", withExtension: "png") ??
+                         Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
+           let img = NSImage(contentsOf: iconUrl) {
+            NSApplication.shared.applicationIconImage = img
+        } else if let img = NSImage(named: "AppIcon") {
+            NSApplication.shared.applicationIconImage = img
+        }
+    }
 
     public var body: some Scene {
         WindowGroup {

@@ -24,7 +24,10 @@ let package = Package(
         .executableTarget(
             name: "iMop",
             dependencies: ["iMopCore"],
-            path: "Sources/iMop"
+            path: "Sources/iMop",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .executableTarget(
             name: "iMopTests",

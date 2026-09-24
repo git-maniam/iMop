@@ -10,20 +10,7 @@ public struct SidebarView: View {
         VStack(spacing: 0) {
             // Header / App Branding
             HStack(spacing: 10) {
-                ZStack {
-                    LinearGradient(
-                        colors: [Color.blue, Color.cyan],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .frame(width: 34, height: 34)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .shadow(color: Color.blue.opacity(0.3), radius: 4, x: 0, y: 2)
-
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-                }
+                appIconView
 
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
@@ -242,5 +229,36 @@ public struct SidebarView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - App Icon View
+    private var appIconView: some View {
+        Group {
+            if let iconUrl = Bundle.main.url(forResource: "AppIcon_UI", withExtension: "png") ??
+                             Bundle.module.url(forResource: "AppIcon_UI", withExtension: "png"),
+               let nsImage = NSImage(contentsOf: iconUrl) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .shadow(color: Color.blue.opacity(0.3), radius: 4, x: 0, y: 2)
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [Color.blue, Color.cyan],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .shadow(color: Color.blue.opacity(0.3), radius: 4, x: 0, y: 2)
+
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+        }
     }
 }

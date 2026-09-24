@@ -33,6 +33,17 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BUILD_BIN" "$MACOS_DIR/iMop"
 chmod +x "$MACOS_DIR/iMop"
 
+# Copy icon and resources
+if [ -f "$PROJECT_DIR/Resources/AppIcon.icns" ]; then
+    cp "$PROJECT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+fi
+if [ -f "$PROJECT_DIR/Resources/AppIcon.png" ]; then
+    cp "$PROJECT_DIR/Resources/AppIcon.png" "$RESOURCES_DIR/AppIcon.png"
+fi
+if [ -f "$PROJECT_DIR/Resources/AppIcon_UI.png" ]; then
+    cp "$PROJECT_DIR/Resources/AppIcon_UI.png" "$RESOURCES_DIR/AppIcon_UI.png"
+fi
+
 # Create Info.plist
 cat <<EOF > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -43,6 +54,10 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>iMop</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.imop.cleaner</string>
     <key>CFBundleInfoDictionaryVersion</key>
