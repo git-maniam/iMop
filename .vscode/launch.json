@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:iMop}",
+            "name": "Debug iMop",
+            "target": "iMop",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug iMop"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:iMop}",
+            "name": "Release iMop",
+            "target": "iMop",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release iMop"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:iMop}",
+            "name": "Debug iMopTests",
+            "target": "iMopTests",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug iMopTests"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:iMop}",
+            "name": "Release iMopTests",
+            "target": "iMopTests",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release iMopTests"
+        }
+    ]
+}
