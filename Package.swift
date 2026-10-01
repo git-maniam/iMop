@@ -19,7 +19,10 @@ let package = Package(
     targets: [
         .target(
             name: "iMopCore",
-            path: "Sources/iMopCore"
+            path: "Sources/iMopCore",
+            resources: [
+                .copy("Rules/Rules.json")
+            ]
         ),
         .executableTarget(
             name: "iMop",

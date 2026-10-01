@@ -205,6 +205,20 @@ public enum Precondition: Sendable, Hashable {
     }
 }
 
+/// How the Scanner infers the bundle identifier of the app that owns a glob-discovered target.
+/// The inferred identifier feeds `Precondition.owningAppNotRunning` (which fails closed when the
+/// owner is unknown).
+public enum OwnerInference: String, Codable, Sendable, CaseIterable {
+    /// No owner is inferred.
+    case none
+    /// The name of the target's parent directory (`Caches/<id>/org.sparkle-project.Sparkle`).
+    case parentDirectoryName
+    /// The target's name without its last extension (`<id>.savedState`).
+    case nameWithoutExtension
+    /// The target's name with the trailing `.ShipIt` removed (`<id>.ShipIt`).
+    case nameBeforeShipIt
+}
+
 /// A data-driven cleanup rule (spec §4). Rules can only narrow what is allowed: the Swift deny-list
 /// and SafetyGate always apply on top.
 public struct Rule: Sendable, Identifiable, Hashable {
@@ -230,6 +244,8 @@ public struct Rule: Sendable, Identifiable, Hashable {
     public let excludedNames: [String]
     /// Rule requires Full Disk Access to discover anything.
     public let requiresFullDiskAccess: Bool
+    /// How the owning app of a glob-discovered target is inferred (inspectors supply owners directly).
+    public let ownerInference: OwnerInference
 
     public init(
         id: String,
@@ -250,7 +266,8 @@ public struct Rule: Sendable, Identifiable, Hashable {
         maxExpectedItems: Int? = nil,
         allowSymlinkTarget: Bool = false,
         excludedNames: [String] = [],
-        requiresFullDiskAccess: Bool = false
+        requiresFullDiskAccess: Bool = false,
+        ownerInference: OwnerInference = .none
     ) {
         self.id = id
         self.version = version
@@ -271,6 +288,7 @@ public struct Rule: Sendable, Identifiable, Hashable {
         self.allowSymlinkTarget = allowSymlinkTarget
         self.excludedNames = excludedNames
         self.requiresFullDiskAccess = requiresFullDiskAccess
+        self.ownerInference = ownerInference
     }
 
     public static let defaultMaxExpectedBytes: Int64 = 200 * 1_000_000_000

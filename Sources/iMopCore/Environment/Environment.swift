@@ -204,6 +204,13 @@ public enum RealHomeGuard {
         hook = newHook
     }
 
+    /// `true` while a hook is installed (test runs only). Lets the live probe perform extra
+    /// resolution for the guard without costing anything in production.
+    public static var isActive: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return hook != nil
+    }
+
     /// Called by the canonicalizer and the live file-system probe with every path they resolve.
     public static func check(_ path: String) {
         lock.lock()

@@ -1,0 +1,654 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "xcode.previews",
+      "category": "developer",
+      "tier": "green",
+      "title": "Xcode Previews data",
+      "explanation": "Simulator devices and build products that Xcode creates to render SwiftUI and other canvas previews.",
+      "whatYouLose": "Nothing you created. The first preview you open afterwards takes longer while Xcode prepares it again.",
+      "howItRegenerates": "Xcode recreates this data automatically the next time you show a preview.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Developer/Xcode/UserData/Previews/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/Xcode/UserData/Previews"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "xcode.docCache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Xcode documentation cache",
+      "explanation": "Documentation pages and search data that Xcode has cached for its Developer Documentation window.",
+      "whatYouLose": "Nothing you created. The documentation window is slower at first, and pages may have to be downloaded again, which needs an internet connection.",
+      "howItRegenerates": "Xcode fills the cache again as you browse the documentation.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Developer/Xcode/DocumentationCache/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/Xcode/DocumentationCache"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "simulator.caches",
+      "category": "developer",
+      "tier": "green",
+      "title": "Simulator caches",
+      "explanation": "Caches that Simulator builds for its iOS, iPadOS, watchOS, tvOS and visionOS runtimes, such as prepared copies of system libraries.",
+      "whatYouLose": "Nothing you created; your simulators and the apps and data inside them are stored elsewhere and are not affected. The next simulator launch is slower while the caches are rebuilt.",
+      "howItRegenerates": "Simulator rebuilds these caches automatically the next time a device starts.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Developer/CoreSimulator/Caches/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/CoreSimulator/Caches"
+      ],
+      "preconditions": [
+        "simulatorIdle"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "spm.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Swift Package Manager cache",
+      "explanation": "Copies of package repositories, manifests and downloaded binary artifacts that Swift Package Manager and Xcode keep so they don't have to fetch the same packages again for every project.",
+      "whatYouLose": "Nothing you created; your projects and their package settings are not affected. The next time a project resolves its packages, they are downloaded again, which takes time and needs an internet connection.",
+      "howItRegenerates": "Swift Package Manager and Xcode download packages again as your projects need them.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/org.swift.swiftpm/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/org.swift.swiftpm"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        },
+        {
+          "processNotRunning": [
+            "swift-build",
+            "swift-package"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "carthage.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Carthage cache",
+      "explanation": "Dependency repositories and prebuilt frameworks that Carthage has downloaded and keeps for reuse.",
+      "whatYouLose": "Nothing you created; the Carthage folders inside your projects are not affected. The next carthage update or bootstrap downloads dependencies again, which takes time and needs an internet connection.",
+      "howItRegenerates": "Carthage downloads what it needs again the next time you run it.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/org.carthage.CarthageKit/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/org.carthage.CarthageKit"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "carthage"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "cocoapods.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "CocoaPods download cache",
+      "explanation": "Pod source code and specifications that CocoaPods has downloaded and keeps so it can install the same pods into your projects without downloading them again.",
+      "whatYouLose": "Nothing you created; the Pods folders inside your projects are not affected. The next pod install downloads the pods again, which takes time and needs an internet connection.",
+      "howItRegenerates": "CocoaPods downloads pods again the next time you run pod install or pod update.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/CocoaPods/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/CocoaPods"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "pod"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "pip.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "pip download cache",
+      "explanation": "Python packages and web responses that pip has downloaded and keeps to make later installs faster.",
+      "whatYouLose": "Nothing you created; installed Python packages and virtual environments are not affected. Future installs download packages again, and some packages may need to be rebuilt, which takes longer.",
+      "howItRegenerates": "pip fills the cache again as you install packages.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/pip/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/pip"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "pip",
+            "pip3"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "poetry.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Poetry package cache",
+      "explanation": "Package files and package information that Poetry has downloaded and keeps for reuse. Poetry's virtual environments are never included here.",
+      "whatYouLose": "Nothing you created; your projects and their virtual environments are not affected. The next poetry install or lock downloads packages again, which takes time and needs an internet connection.",
+      "howItRegenerates": "Poetry downloads what it needs again the next time you install or lock dependencies.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/pypoetry/cache/*",
+          "{HOME}/Library/Caches/pypoetry/artifacts/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/pypoetry/cache",
+        "{HOME}/Library/Caches/pypoetry/artifacts"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "poetry"
+          ]
+        }
+      ],
+      "action": "quarantine",
+      "excludedNames": [
+        "virtualenvs"
+      ]
+    },
+    {
+      "id": "cargo.registrySrc",
+      "category": "developer",
+      "tier": "green",
+      "title": "Cargo extracted crate sources",
+      "explanation": "Unpacked source code of the Rust crates your projects depend on. Cargo keeps the downloaded crate files separately and unpacks them here when it builds.",
+      "whatYouLose": "Nothing you created; your own projects and build outputs are not affected. The next build takes a little longer while Cargo unpacks the crates again (and downloads them again if the downloaded crate files are gone too). If you edited any of these sources by hand, those edits are lost.",
+      "howItRegenerates": "Cargo unpacks the sources again automatically the next time a project is built.",
+      "discovery": {
+        "glob": [
+          "{HOME}/.cargo/registry/src/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/.cargo/registry/src"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "cargo",
+            "rustc"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "vscode.caches",
+      "category": "developer",
+      "tier": "green",
+      "title": "Visual Studio Code caches and logs",
+      "explanation": "Only these folders of Visual Studio Code: Cache, Code Cache and GPUCache (web content, compiled script and graphics caches), CachedData (prepared copies of Visual Studio Code's own code that make it start faster), CachedExtensionVSIXs (extension installer files kept after downloading) and logs (diagnostic logs). Your settings, extensions, workspaces and backups of unsaved files are never touched.",
+      "whatYouLose": "Nothing you created. Visual Studio Code may start a little slower once, and old log files that could help troubleshoot a past problem are gone.",
+      "howItRegenerates": "Visual Studio Code recreates these folders automatically while it runs.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Application Support/Code/Cache",
+          "{HOME}/Library/Application Support/Code/CachedData",
+          "{HOME}/Library/Application Support/Code/CachedExtensionVSIXs",
+          "{HOME}/Library/Application Support/Code/Code Cache",
+          "{HOME}/Library/Application Support/Code/GPUCache",
+          "{HOME}/Library/Application Support/Code/logs"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support/Code"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.microsoft.VSCode"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "cursor.caches",
+      "category": "developer",
+      "tier": "green",
+      "title": "Cursor caches and logs",
+      "explanation": "Only these folders of Cursor: Cache, Code Cache and GPUCache (web content, compiled script and graphics caches), CachedData (prepared copies of Cursor's own code that make it start faster), CachedExtensionVSIXs (extension installer files kept after downloading) and logs (diagnostic logs). Your settings, extensions, workspaces and backups of unsaved files are never touched.",
+      "whatYouLose": "Nothing you created. Cursor may start a little slower once, and old log files that could help troubleshoot a past problem are gone.",
+      "howItRegenerates": "Cursor recreates these folders automatically while it runs.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Application Support/Cursor/Cache",
+          "{HOME}/Library/Application Support/Cursor/CachedData",
+          "{HOME}/Library/Application Support/Cursor/CachedExtensionVSIXs",
+          "{HOME}/Library/Application Support/Cursor/Code Cache",
+          "{HOME}/Library/Application Support/Cursor/GPUCache",
+          "{HOME}/Library/Application Support/Cursor/logs"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support/Cursor"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.todesktop.230313mzl4w4u92"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "jetbrains.logs",
+      "category": "developer",
+      "tier": "green",
+      "title": "JetBrains IDE logs",
+      "explanation": "Log folders written by JetBrains IDEs such as IntelliJ IDEA, PyCharm and WebStorm, one per product version. Only folders not changed in the last 7 days are included.",
+      "whatYouLose": "Old diagnostic logs that could help troubleshoot a past IDE problem. Your projects, settings, plugins and caches are not affected.",
+      "howItRegenerates": "The IDE writes new logs the next time it runs.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Logs/JetBrains/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Logs/JetBrains"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.jetbrains.*"
+          ]
+        },
+        {
+          "olderThan": 7
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "apps.userCaches",
+      "category": "apps",
+      "tier": "green",
+      "title": "App caches",
+      "explanation": "Cache folders in your Library that belong to apps installed on this Mac (Apple's own apps are excluded). Apps keep temporary data here, such as downloaded images or prepared data, to work faster.",
+      "whatYouLose": "Usually nothing you created. Apps may start or load content more slowly at first while they rebuild their caches. Some apps keep downloaded content here for offline use; that content would need to be downloaded again.",
+      "howItRegenerates": "Each app recreates its cache automatically as you use it.",
+      "discovery": {
+        "inspector": "appUserCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches"
+      ],
+      "preconditions": [
+        "owningAppNotRunning",
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "apps.containerCaches",
+      "category": "apps",
+      "tier": "green",
+      "title": "Sandboxed app caches",
+      "explanation": "Cache folders inside the private containers of sandboxed apps installed on this Mac, such as many apps from the App Store (Apple's own apps are excluded).",
+      "whatYouLose": "Usually nothing you created. Apps may start or load content more slowly at first while they rebuild their caches. Some apps keep downloaded content here for offline use; that content would need to be downloaded again.",
+      "howItRegenerates": "Each app recreates its cache automatically as you use it.",
+      "discovery": {
+        "inspector": "appContainerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Containers"
+      ],
+      "minDepthBelowRoot": 5,
+      "preconditions": [
+        "owningAppNotRunning",
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine",
+      "requiresFullDiskAccess": true
+    },
+    {
+      "id": "apps.sparkleUpdates",
+      "category": "apps",
+      "tier": "green",
+      "title": "Downloaded app updates (Sparkle)",
+      "explanation": "Update files downloaded by apps that use the Sparkle updater. They are either already installed or still waiting to be installed.",
+      "whatYouLose": "If an update was downloaded but not installed yet, the app has to download it again before it can install it. Nothing else is affected.",
+      "howItRegenerates": "The app downloads updates again the next time it checks for them.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/*/org.sparkle-project.Sparkle"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches"
+      ],
+      "minDepthBelowRoot": 2,
+      "preconditions": [
+        "owningAppNotRunning",
+        {
+          "processNotRunning": [
+            "Autoupdate",
+            "Updater"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine",
+      "ownerInference": "parentDirectoryName"
+    },
+    {
+      "id": "apps.squirrelShipIt",
+      "category": "apps",
+      "tier": "green",
+      "title": "Downloaded app updates (Squirrel)",
+      "explanation": "Update files and updater state kept by apps that use the Squirrel updater, which is common in Electron apps such as Slack or Visual Studio Code.",
+      "whatYouLose": "If an update was downloaded but not installed yet, the app has to download it again before it can install it. Nothing else is affected.",
+      "howItRegenerates": "The app's updater recreates this folder the next time it checks for updates.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/*.ShipIt"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches"
+      ],
+      "preconditions": [
+        "owningAppNotRunning",
+        {
+          "processNotRunning": [
+            "ShipIt"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine",
+      "ownerInference": "nameBeforeShipIt"
+    },
+    {
+      "id": "apps.electronCaches",
+      "category": "apps",
+      "tier": "green",
+      "title": "Electron app caches",
+      "explanation": "Web content, compiled script and graphics caches of supported apps built with Electron, such as Slack, Discord, Notion and Figma. Only folders named Cache, Code Cache, GPUCache, DawnCache, DawnGraphiteCache and DawnWebGPUCache are included; sign-ins, settings, local storage and databases are never touched.",
+      "whatYouLose": "Nothing you created, and you stay signed in. The app may start or load content a little slower at first.",
+      "howItRegenerates": "The app recreates these caches automatically while it runs.",
+      "discovery": {
+        "inspector": "electronCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support"
+      ],
+      "minDepthBelowRoot": 2,
+      "preconditions": [
+        "owningAppNotRunning"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "apps.savedState",
+      "category": "apps",
+      "tier": "green",
+      "title": "Saved window state",
+      "explanation": "Information macOS keeps so an app can reopen the windows you had open when you last quit it (the Resume feature).",
+      "whatYouLose": "The app won't reopen its previous windows the next time you launch it and starts with a fresh window instead. Your saved documents are not stored here and are not affected.",
+      "howItRegenerates": "macOS records the window state again the next time you use and quit the app.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Saved Application State/*.savedState"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Saved Application State"
+      ],
+      "preconditions": [
+        "owningAppNotRunning"
+      ],
+      "action": "quarantine",
+      "ownerInference": "nameWithoutExtension"
+    },
+    {
+      "id": "browser.chromium.cache",
+      "category": "browsers",
+      "tier": "green",
+      "title": "Chrome, Edge, Brave, Arc and Vivaldi caches",
+      "explanation": "Copies of web pages, images, compiled scripts and graphics data that Chromium-based browsers keep to load sites faster. Only folders named Cache, Code Cache and GPUCache are included; cookies, history, passwords, extensions, service workers and site storage are never touched.",
+      "whatYouLose": "Nothing you created, and you stay signed in to websites. Sites load a little slower on your next visit.",
+      "howItRegenerates": "The browser fills its caches again as you browse.",
+      "discovery": {
+        "inspector": "chromiumCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support",
+        "{HOME}/Library/Caches"
+      ],
+      "minDepthBelowRoot": 3,
+      "preconditions": [
+        "owningAppNotRunning"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "browser.firefox.cache",
+      "category": "browsers",
+      "tier": "green",
+      "title": "Firefox web cache",
+      "explanation": "Copies of web pages, images and scripts that Firefox keeps to load sites faster (the cache2 folder of each Firefox profile).",
+      "whatYouLose": "Nothing you created. Sites load a little slower on your next visit. Bookmarks, history, passwords, cookies and open tabs are stored elsewhere and are not affected.",
+      "howItRegenerates": "Firefox fills the cache again as you browse.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/Firefox/Profiles/*/cache2"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/Firefox/Profiles"
+      ],
+      "minDepthBelowRoot": 2,
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "org.mozilla.firefox*",
+            "org.mozilla.nightly"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "browser.safari.cache",
+      "category": "browsers",
+      "tier": "green",
+      "title": "Safari web cache",
+      "explanation": "Copies of web pages, images and other website files that Safari keeps to load sites faster.",
+      "whatYouLose": "Nothing you created. Sites load a little slower on your next visit. Bookmarks, history, passwords, cookies and open tabs are stored elsewhere and are not affected.",
+      "howItRegenerates": "Safari fills the cache again as you browse.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/com.apple.Safari/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/com.apple.Safari"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.Safari"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine",
+      "requiresFullDiskAccess": true
+    },
+    {
+      "id": "mail.downloads",
+      "category": "apps",
+      "tier": "green",
+      "title": "Mail attachment copies",
+      "explanation": "Temporary copies that Mail makes when you open an attachment. The attachments themselves stay in your messages. Only copies not changed in the last 7 days are included.",
+      "whatYouLose": "If you edited an opened attachment and never saved it anywhere else, those edits exist only in this copy and will be lost. Otherwise nothing is lost: you can open the attachment from its message again, as long as the message still exists.",
+      "howItRegenerates": "Mail makes a new copy the next time you open an attachment.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Containers/com.apple.mail/Data/Library/Mail Downloads/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Containers/com.apple.mail/Data/Library/Mail Downloads"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.mail"
+          ]
+        },
+        {
+          "olderThan": 7
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine",
+      "requiresFullDiskAccess": true
+    },
+    {
+      "id": "logs.user",
+      "category": "system",
+      "tier": "green",
+      "title": "Old app logs",
+      "explanation": "Log files that apps write in your Library's Logs folder to record what they did. Only items not changed in the last 7 days and not open in any app are included. iMop's own logs, crash reports and JetBrains logs are handled separately.",
+      "whatYouLose": "Old diagnostic logs that could help troubleshoot a past problem or be sent to an app's developer.",
+      "howItRegenerates": "Apps write new log files as they run.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Logs/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Logs"
+      ],
+      "preconditions": [
+        {
+          "olderThan": 7
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine",
+      "excludedNames": [
+        "iMop",
+        "DiagnosticReports",
+        "JetBrains"
+      ]
+    },
+    {
+      "id": "logs.diagnosticReports",
+      "category": "system",
+      "tier": "green",
+      "title": "Old crash and diagnostic reports",
+      "explanation": "Reports macOS writes when an app crashes, hangs or uses too many resources. Only reports older than 30 days are included.",
+      "whatYouLose": "You can no longer view these old reports or send them to a developer. Reports that were already sent are not affected.",
+      "howItRegenerates": "macOS writes a new report if a problem happens again.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Logs/DiagnosticReports/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Logs/DiagnosticReports"
+      ],
+      "preconditions": [
+        {
+          "olderThan": 30
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "ios.firmware",
+      "category": "system",
+      "tier": "green",
+      "title": "Downloaded iPhone and iPad software",
+      "explanation": "Software update files (.ipsw) that Finder downloaded to update or restore an iPhone, iPad or iPod.",
+      "whatYouLose": "If you update or restore a device from this Mac again, Finder has to download the software again, which can take a while because these files are several gigabytes.",
+      "howItRegenerates": "Finder downloads the software again when it needs it.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/iTunes/iPhone Software Updates/*.ipsw",
+          "{HOME}/Library/iTunes/iPad Software Updates/*.ipsw",
+          "{HOME}/Library/iTunes/iPod Software Updates/*.ipsw"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/iTunes/iPhone Software Updates",
+        "{HOME}/Library/iTunes/iPad Software Updates",
+        "{HOME}/Library/iTunes/iPod Software Updates"
+      ],
+      "preconditions": [
+        {
+          "olderThan": 1
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    }
+  ]
+}

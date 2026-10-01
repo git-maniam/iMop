@@ -44,6 +44,34 @@ if [ -f "$PROJECT_DIR/Resources/AppIcon_UI.png" ]; then
     cp "$PROJECT_DIR/Resources/AppIcon_UI.png" "$RESOURCES_DIR/AppIcon_UI.png"
 fi
 
+# Copy every SwiftPM resource bundle built next to the binary (iMop_iMopCore.bundle holds Rules.json,
+# iMop_iMop.bundle holds the app's images). A missing bundle would make the generated `Bundle.module`
+# accessor call fatalError at runtime, so a missing iMopCore bundle fails the packaging step instead.
+BUILD_DIR="$(dirname "$BUILD_BIN")"
+FOUND_CORE_BUNDLE=0
+shopt -s nullglob
+for RESOURCE_BUNDLE in "$BUILD_DIR"/*.bundle; do
+    BUNDLE_NAME="$(basename "$RESOURCE_BUNDLE")"
+    echo "📚 Copying resource bundle $BUNDLE_NAME"
+    # Contents/Resources: where SafeClean's RuleCatalog looks first (Bundle.main.resourceURL).
+    rm -rf "$RESOURCES_DIR/$BUNDLE_NAME"
+    cp -R "$RESOURCE_BUNDLE" "$RESOURCES_DIR/$BUNDLE_NAME"
+    # App root: where the SwiftPM-generated `Bundle.module` accessor looks
+    # (Bundle.main.bundleURL/<name>.bundle). NOTE: content at the .app root is unsealed for
+    # codesign; the notarized build (Milestone 8) must drop this copy once no code path uses
+    # `Bundle.module` any more.
+    rm -rf "$APP_DIR/$BUNDLE_NAME"
+    cp -R "$RESOURCE_BUNDLE" "$APP_DIR/$BUNDLE_NAME"
+    if [ "$BUNDLE_NAME" = "iMop_iMopCore.bundle" ]; then
+        FOUND_CORE_BUNDLE=1
+    fi
+done
+shopt -u nullglob
+if [ "$FOUND_CORE_BUNDLE" -ne 1 ]; then
+    echo "❌ iMop_iMopCore.bundle (Rules.json) was not found next to $BUILD_BIN" >&2
+    exit 1
+fi
+
 # Create Info.plist
 cat <<EOF > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
