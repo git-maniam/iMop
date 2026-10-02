@@ -26,6 +26,7 @@
   - [The IMOP_ALLOW_MUTATION flag](#the-imop_allow_mutation-flag)
   - [Commands](#commands)
   - [Packaging iMop.app](#packaging-imopapp)
+  - [Distribution (Developer ID, notarization)](#distribution-developer-id-notarization)
 - [Developer guide](#developer-guide)
   - [Package layout](#package-layout)
   - [The pipeline](#the-pipeline)
@@ -313,20 +314,93 @@ SWIFT_EXEC=./scripts/swiftc-wrapper.sh swift run iMop
 ### Packaging iMop.app
 
 ```bash
-./scripts/package_app.sh
+./scripts/package_app.sh               # universal (arm64 + x86_64), the default
+./scripts/package_app.sh --host-only   # faster: only the architecture of this Mac, for local testing
 open build/iMop.app
 ```
 
-The script builds a release binary **with** `IMOP_ALLOW_MUTATION` (in its own scratch folder,
-`.build/package-release`), assembles `build/iMop.app` (version 1.1.0, build 2, minimum macOS 14.0),
-copies the SwiftPM resource bundles (the `iMop_iMopCore.bundle` holding `Rules.json` is required; the
-script fails if it or `Rules.json` is missing) and writes `Info.plist`.
+The script builds a release binary **with** `IMOP_ALLOW_MUTATION` for arm64 and x86_64 separately
+(`--triple <arch>-apple-macosx14.0`, each in its own scratch folder `.build/package-release-<arch>`, so
+the cleaning-enabled build never lands in `.build`'s debug output), merges them with `lipo -create` and
+fails unless `lipo -archs` shows both slices. It then assembles `build/iMop.app` (version 1.1.0,
+build 2, minimum macOS 14.0), copies the SwiftPM resource bundles **only into `Contents/Resources`**
+(the `iMop_iMopCore.bundle` holding `Rules.json` is required; the script fails if it or `Rules.json` is
+missing, or if anything other than `Contents/` ends up at the `.app` root) and writes `Info.plist`.
 
-Caveats: the app is **not** Developer ID signed, has no Hardened Runtime and is **not notarized** yet
-(Milestone 8), so Gatekeeper will warn the first time you open it. The resource bundles are also copied
-to the root of the `.app` for the SwiftPM `Bundle.module` accessor, which `codesign` does not accept;
-the notarized build will have to drop that copy. Until the manual QA checklist in
+No code uses SwiftPM's `Bundle.module` accessor (it calls `fatalError` when its bundle is not at the
+`.app` root, where `codesign` refuses unsealed content); icons and `Rules.json` are found through
+`Bundle.main` / `Contents/Resources` (`BundledResourceLocator`, `RuleCatalog`), and from the build
+folder when run with `swift run`. A static test keeps it that way.
+
+`package_app.sh` does **not** sign: the binary only has the linker's ad-hoc signature, which is fine
+for local runs but makes Gatekeeper warn on other Macs. Until the manual QA checklist in
 [SAFETY.md](SAFETY.md#manual-qa-checklist) has passed, try cleaning builds on a disposable macOS VM.
+
+### Distribution (Developer ID, notarization)
+
+A build you hand to other people must be signed with a **Developer ID Application** certificate, use
+the **Hardened Runtime** and be **notarized** by Apple (spec §2). iMop needs **no entitlements**: it is
+not sandboxed, has no network access and the release signature must not carry `get-task-allow`.
+`scripts/sign_and_notarize.sh` does all of it.
+
+**One-time setup**
+
+1. Join the [Apple Developer Program](https://developer.apple.com/programs/) (paid). Note your
+   **Team ID** (developer.apple.com › Account › Membership details).
+2. Create a **Developer ID Application** certificate: Xcode › Settings › Accounts › select your team ›
+   Manage Certificates… › **+** › *Developer ID Application*. (Or create it at
+   developer.apple.com › Certificates and double-click the downloaded `.cer`.) Check that it is there:
+   ```bash
+   security find-identity -v -p codesigning   # → "Developer ID Application: Your Name (TEAMID)"
+   ```
+3. Create an **app-specific password** for your Apple ID at [account.apple.com](https://account.apple.com)
+   › Sign-In and Security › App-Specific Passwords, then store the notarization credentials in your
+   login keychain under the profile name `imop-notary`:
+   ```bash
+   xcrun notarytool store-credentials imop-notary --apple-id you@example.com --team-id TEAMID
+   # prompts for the app-specific password (passing --password <app-specific password> also works,
+   # but leaves it in your shell history)
+   ```
+
+**Each release**
+
+```bash
+./scripts/package_app.sh                 # universal, unsigned build/iMop.app
+./scripts/sign_and_notarize.sh           # sign, notarize, staple → build/iMop-1.1.0.zip and .dmg
+```
+
+| Option | Meaning |
+|---|---|
+| `--identity "Developer ID Application: Name (TEAMID)"` | Signing identity: the exact certificate name as listed by `security find-identity -v -p codesigning`, or its 40-digit SHA-1 hash (any case). No partial matches. Default: the only Developer ID Application identity in the keychain; none or several is an error. After a certificate renewal the old and new certificates share a name, so pass the hash. |
+| `--profile imop-notary` | notarytool keychain profile (default `imop-notary`). |
+| `--no-dmg` | Only the notarized `.zip`, no `.dmg`. |
+| `--adhoc` | No certificate needed: ad-hoc signature with Hardened Runtime plus the same strict verification and entitlement checks, no notarization. Checks that the bundle is signable; the result is **not distributable**. |
+
+What the script does: preflight (`build/iMop.app` exists, the binary is universal, nothing but
+`Contents/` at the `.app` root, `Rules.json` present inside `Contents/Resources/iMop_iMopCore.bundle`,
+version read from `Info.plist`); checks the identity and the notary profile before touching anything;
+removes any `build/iMop-<version>.zip`, `.dmg` and `build/notary-log-*.json` left from an earlier run
+(`package_app.sh` does the same), so a failed run never leaves an outdated or un-notarized file at
+the upload path; signs with
+`codesign --force --timestamp --options runtime` (never `--deep`, no entitlements file); verifies with
+`codesign --verify --strict --deep`, and fails if the signature has any entitlement (in particular
+`get-task-allow`, network or sandbox) or if `codesign` cannot report the entitlements, lacks the `runtime` flag, the Developer ID authority or a secure
+timestamp; submits a zip with `notarytool submit --wait` and, if the status is not `Accepted`, saves the
+log to `build/notary-log-<id>.json` and stops; staples the ticket, runs `stapler validate` and
+`spctl --assess` (must say `source=Notarized Developer ID`); zips the **stapled** app as
+`build/iMop-<version>.zip`; and (unless `--no-dmg`) builds the DMG in a temporary folder, signs,
+notarizes, staples and validates it, and only then moves it to `build/iMop-<version>.dmg`. It never uses `sudo` and never prints credentials.
+
+**Before you publish**
+
+- **Full Disk Access must be granted again.** macOS ties the permission to the app's code signature,
+  so a Developer ID build is a new app to TCC, even if you granted access to an earlier build.
+- **Test on a clean Mac or VM.** Download the DMG or zip through a browser (so it gets the quarantine
+  attribute), open it: there must be **no Gatekeeper warning**. Then run the manual QA checklist in
+  [SAFETY.md](SAFETY.md#manual-qa-checklist).
+- The bundle ID is `com.imop.cleaner`. If you own a domain, a reverse-DNS ID based on it is better
+  practice for a published app. Decide before the first release: settings live in the `com.imop.cleaner`
+  defaults domain and permission grants are tied to the ID, so changing it later resets both.
 
 ---
 
@@ -356,7 +430,7 @@ Package.swift
 | `Audit/` | `AuditLog` (JSONL, export). |
 | `Permissions/` | `FullDiskAccessProbe`, `AppManagementProbe` and their System Settings deep links. |
 | `ViewModels/` | `AppState`: the `@MainActor @Observable` state the UI binds to (scan, selection, review, execution, quarantine, settings, permissions). All file-system work runs off the main thread. |
-| `Models/`, `Utils/` | `DiskUsage`, `ScanTarget`, `ByteFormatter`, `LocalState`. |
+| `Models/`, `Utils/` | `DiskUsage`, `ScanTarget`, `ByteFormatter`, `LocalState`, `BundledResourceLocator` (finds bundled files without SwiftPM's `Bundle.module`). |
 
 `Sources/iMop/` holds the SwiftUI app: `App/iMopApp.swift` (window, Settings scene, About window,
 menu commands: Start Scan <kbd>Cmd</kbd>+<kbd>R</kbd>, Open Quarantine, Export Audit Log..., Full Disk
@@ -454,6 +528,7 @@ so they run with only the Command Line Tools. They never touch real user files:
 | Yellow rules (M5) | XcodeInspector, ProjectScanner, other Yellow inspectors, Yellow policy (nothing preselected) |
 | Red & advisory (M6) | OrphanDetector (each of the 8 conditions), LaunchAgents, Trash flows, Advisory, retention overrides |
 | App state (M7) | AppState / SettingsStore behaviour against a fake environment; static About text / v1.1 badge / no v1.0 toggles or types |
+| Distribution (M8) | No `Bundle.module` anywhere in `Sources/` (static); `BundledResourceLocator` finds icons in `Contents/Resources`, in the nested resource bundle or the build folder, and returns nil instead of trapping |
 
 ---
 

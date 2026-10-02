@@ -66,6 +66,9 @@ struct TestRunner {
         await AboutTextTests.runAll()
         await M7ReviewRegressionTests.runAll()
 
+        // Milestone 8 — distribution: no SwiftPM `Bundle.module` (resource bundles live only in Contents/Resources).
+        await BundleResourceTests.runAll()
+
         await TestSuite.run("Fixtures: no iMopTests-* directory created by this run is left in the temporary directory") {
             let leftovers = FixtureLeakCheck.fixtureRootNames().subtracting(fixturesBefore)
             try TestSuite.assertTrue(leftovers.isEmpty, "leaked fixture roots: \(leftovers.sorted())")

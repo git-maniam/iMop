@@ -10,9 +10,15 @@ public struct iMopApp: App {
         configureAppIcon()
     }
 
+    /// SwiftPM's resource bundle for this target (holds AppIcon.png / AppIcon_UI.png). The packaged app
+    /// keeps it only in Contents/Resources (the icons are also copied there directly).
+    static let resourceBundleName = "iMop_iMop.bundle"
+
     private func configureAppIcon() {
-        if let iconUrl = Bundle.main.url(forResource: "AppIcon", withExtension: "png") ??
-                         Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
+        // Never the SwiftPM `Bundle.module` accessor: it traps when its bundle is not at the .app root,
+        // and the signed app has nothing at the root (see BundledResourceLocator).
+        if let iconUrl = BundledResourceLocator.url(forResource: "AppIcon", withExtension: "png",
+                                                    resourceBundleName: Self.resourceBundleName),
            let img = NSImage(contentsOf: iconUrl) {
             NSApplication.shared.applicationIconImage = img
         } else if let img = NSImage(named: "AppIcon") {

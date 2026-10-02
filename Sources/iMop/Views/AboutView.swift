@@ -39,8 +39,9 @@ struct AppIconImage: View {
     let size: CGFloat
 
     @MainActor private static let cachedImage: NSImage? = {
-        if let url = Bundle.main.url(forResource: "AppIcon_UI", withExtension: "png")
-            ?? Bundle.module.url(forResource: "AppIcon_UI", withExtension: "png"),
+        // Missing image -> nil -> the drawn gradient placeholder below (never `Bundle.module`, which traps).
+        if let url = BundledResourceLocator.url(forResource: "AppIcon_UI", withExtension: "png",
+                                                resourceBundleName: iMopApp.resourceBundleName),
            let image = NSImage(contentsOf: url) {
             return image
         }

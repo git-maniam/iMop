@@ -236,7 +236,7 @@ timeout, malformed or unexpected output, missing data), it is **false** and the 
 downloaded). Decoding is **strict** (unknown keys, unknown cases, wrong types are errors; unknown
 top-level keys or file version invalidate the whole file). Any invalid rule is **disabled and logged**,
 and the app continues. A missing `Rules.json` gives an empty catalog (the SwiftPM `Bundle.module`
-accessor, which would `fatalError`, is never used).
+accessor, which would `fatalError`, is never used anywhere in `Sources/`; a static test enforces it).
 
 Each rule must have: a valid unique `id` (an id used twice disables every copy); version >= 1;
 non-empty `title`, `explanation`, `whatYouLose`, `howItRegenerates`; `minDepthBelowRoot >= 1`; positive
@@ -532,8 +532,8 @@ None of these may appear in the codebase (enforced by code review and the static
 |---|---|---|
 | §2 deployment target macOS 26, Liquid Glass | **macOS 14.0** (`Package.swift` `.macOS(.v14)`, `LSMinimumSystemVersion 14.0`); standard SwiftUI controls and materials, no Liquid Glass | Owner decision. Only APIs available on macOS 14 are used. The QA checklist runs on a macOS 14+ VM (also test the newest macOS available). |
 | §5.3 trusted locations include `/opt/homebrew/bin/*`, `/usr/local/bin/*` | By default `CommandRunner` refuses any directory on the way that is **group- or world-writable**, so Homebrew's default `/opt/homebrew/bin` (0775, group `admin`) is refused and Homebrew-installed tools report a specific reason ("… a folder other accounts can change. Turn on “Trust Homebrew tools” in Settings …"). **Implemented owner decision (option B, opt-in):** Settings › "Trust Homebrew tools" — **OFF by default** — accepts admin-group-writable directories only inside the exact Homebrew prefixes, owned by the user, group exactly `admin`, never world-writable (files never relaxed). Turning it on first lists the other `admin` accounts (or warns that they could not be determined), needs an explicit confirmation and is audited. Tools whose symlink resolves outside the trusted roots (e.g. a `/usr/local/bin/docker` link into `/Applications/Docker.app`, Ollama.app's CLI) stay refused. | The spec only forbids world-writable folders; the default stays stricter because on a Mac with several administrators every one of them could swap a Homebrew tool. Opt-in so the user decides with the account list in front of them. `cocoapods.cache` falls back to its Quarantine rule when `pod` is not available. |
-| §2 arm64 + x86_64 | `package_app.sh` builds for the host architecture only | Milestone 8 |
-| §2 Developer ID, Hardened Runtime, notarized | Ad-hoc linker signature only; resource bundles are also copied to the `.app` root for SwiftPM's `Bundle.module` (rejected by `codesign`) | Milestone 8 |
+| §2 arm64 + x86_64 | **Done.** `package_app.sh` builds arm64 and x86_64 separately and merges them with `lipo` (fails unless both slices are present); `--host-only` gives a fast single-arch local build | Milestone 8 |
+| §2 Developer ID, Hardened Runtime, notarized | **Scripted, not yet run:** `scripts/sign_and_notarize.sh` signs with Developer ID + Hardened Runtime (no entitlements; fails on `get-task-allow`, network or sandbox entitlements), notarizes, staples and checks `spctl`. It needs the owner's Developer ID Application certificate and a notarytool keychain profile (README › Distribution). `package_app.sh` itself leaves only the linker's ad-hoc signature. The `.app` root holds only `Contents/` (resource bundles live in `Contents/Resources`; no code uses `Bundle.module`), and `sign_and_notarize.sh --adhoc` verifies the bundle passes `codesign --verify --strict --deep` with the Hardened Runtime | Milestone 8 (signing pending the certificate) |
 | §9.2 badge "Green/Yellow/Red/Info" | Badge text "Safe / Review / Caution / Info" (`Tier.displayName`) plus an SF Symbol | Plain-language labels; still text + icon, never colour alone |
 | §6.8 "Delete immediately (skip quarantine)" for AI models | Not offered. `permanentDelete` is allowed only for `trash.empty` and `system.coreDumps` (Yellow) | Conservative |
 | §6.6 `system.coreDumps`, `trash.empty` (permanent) | Yellow `permanentDelete`, **blocked while "Always quarantine" is ON** (default), shown as blocked with that reason; never preselected and never selected by "Select All"; needs the irreversible acknowledgement. The Trash items are ONE "Empty Trash" choice (`AppState.requestToggle` → `pendingEmptyTrashConfirmation` → `confirmEmptyTrash`): all of them are selected or deselected together, only through a dialog naming the count and size; `confirmAndClean` refuses a partial or unconfirmed Trash selection | Conservative reading of §9.9 ("never permanently delete in one step") and §6.6 |
@@ -554,7 +554,9 @@ None of these may appear in the codebase (enforced by code review and the static
 ## Manual QA checklist
 
 Spec §13.1. **Run only on a disposable macOS VM (macOS 14 or later; never on a developer's daily
-machine)**, with the cleaning-enabled build from `./scripts/package_app.sh`. Take a VM snapshot first.
+machine)**, with the cleaning-enabled build from `./scripts/package_app.sh` (for the release QA pass: the signed,
+notarized build from `./scripts/sign_and_notarize.sh`, downloaded through a browser; grant Full Disk
+Access again, because macOS ties it to the code signature). Take a VM snapshot first.
 
 - [ ] Clean everything Green + Yellow → reboot → Xcode builds a project, Simulator boots,
       Safari/Chrome/Slack/VS Code launch and stay logged in.
@@ -603,10 +605,23 @@ Additional checks for this build:
 
 ## Remaining Milestone 8 work
 
-- Developer ID signing, Hardened Runtime, notarization; entitlements without network client/server and
-  without `get-task-allow`; stop copying resource bundles to the `.app` root (drop `Bundle.module` use in
-  the app target).
-- Universal (arm64 + x86_64) release build.
+- **Done:** resource bundles are copied only into `Contents/Resources` (the `.app` root holds only
+  `Contents/`, so `codesign` accepts the bundle); both `Bundle.module` fallbacks in the app target were
+  replaced by `BundledResourceLocator` (icons from `Contents/Resources`, the nested `iMop_iMop.bundle`, or
+  the build folder under `swift run`; a missing icon shows the drawn placeholder, never a crash); a
+  static test forbids `Bundle.module` in `Sources/`.
+- **Done:** universal (arm64 + x86_64) release build in `package_app.sh`, verified with `lipo -archs`.
+- **Scripted, needs the owner:** Developer ID signing, Hardened Runtime, notarization and stapling
+  (`scripts/sign_and_notarize.sh`; no entitlements, so no network client/server and no `get-task-allow`).
+  Requires an Apple Developer Program membership, a Developer ID Application certificate in the
+  keychain and `xcrun notarytool store-credentials imop-notary …` (README › Distribution). Until then,
+  `./scripts/sign_and_notarize.sh --adhoc --no-dmg` checks that the bundle is signable (not distributable).
+  The script fails closed: an unreadable entitlement list is an error (never "no entitlements"), the
+  identity must match an exact certificate name or SHA-1 hash, and outdated `build/iMop-<version>.zip` /
+  `.dmg` files are deleted before signing, while the new DMG is built in a temporary folder and moved to
+  `build/` only after notarization, stapling and `spctl` pass.
+- Release QA on a clean VM with the notarized download: no Gatekeeper warning, Full Disk Access granted
+  again (the permission is tied to the signature), then the manual QA checklist above.
 - Performance: scan a 1M-file home / 500 GB fixture without UI hangs; audit that no file-system work runs
   on the main thread.
 - Accessibility audit (VoiceOver, keyboard navigation, Dynamic Type).
@@ -621,7 +636,7 @@ conservative behaviour was chosen.
 
 <!-- BEGIN GENERATED SAFETY-DECISION INDEX -->
 
-542 SAFETY-DECISION comments in 50 files.
+543 SAFETY-DECISION comments in 51 files.
 
 ### `Sources/iMopCore/Environment/Environment.swift` (9)
 
@@ -1269,6 +1284,10 @@ conservative behaviour was chosen.
 - deselect anything inside (or containing) the new exclusion right away; the plan itself is outdated now and must be rebuilt by a new scan before cleaning.
 - `nil` means "never recorded", which pauses the OrphanDetector until the next scan records the connected drives again (see `ScanSettings.lastSeenVolumes`).
 
+### `Sources/iMopCore/Utils/BundledResourceLocator.swift` (1)
+
+- (Milestone 8) `Bundle.module` calls `fatalError` when its bundle is not at `Bundle.main.bundleURL/<name>.bundle` (the .app ROOT); the signed app keeps resource bundles only in Contents/Resources, so files are looked up there (and next to the executable for `swift run`) and absence returns nil.
+
 ### `Sources/iMop/Views/CategoryListView.swift` (1)
 
 - bulk selection never selects Red items (enforced in AppState); say so here so the user is not surprised that they stay unchecked.
@@ -1312,7 +1331,7 @@ conservative behaviour was chosen.
 
 ### `scripts/package_app.sh` (2)
 
-- the cleaning-enabled build gets its own scratch directory, so a binary compiled with IMOP\_ALLOW\_MUTATION never lands in the default .build folder used by `swift build` / `swift run` during development (where it could be mistaken for, or run instead of, a dry-run build).
+- the cleaning-enabled build gets its own scratch directories (one per architecture), so a binary compiled with IMOP\_ALLOW\_MUTATION never lands in the default .build folder used by `swift build` / `swift run` during development (where it could be mistaken for, or run instead of, a dry-run build).
 - without Rules.json the app loads an empty catalog (it never traps, it simply offers nothing), which would ship a cleaner that silently finds nothing.
 
 <!-- END GENERATED SAFETY-DECISION INDEX -->
