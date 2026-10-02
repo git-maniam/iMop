@@ -378,3 +378,352 @@ public struct ChromiumCachesInspector: Inspector {
         return result
     }
 }
+
+// MARK: - Deny-list pre-filter (Milestone 5)
+
+/// Read-only deny-list pre-filter used by inspectors so they never even PROPOSE a protected path or
+/// walk into one. It is defence in depth only: the Scanner and SafetyGate apply the full deny-list
+/// again (both spellings of the home directory) before anything is offered or acted on.
+struct InspectorDenyFilter: Sendable {
+    private let canonicalizer: PathCanonicalizer
+    private let denyLists: [DenyList]
+
+    init(environment: SafeCleanEnvironment) {
+        let canonicalizer = PathCanonicalizer(environment: environment)
+        self.canonicalizer = canonicalizer
+        var homes = [environment.homePath]
+        for form in PreconditionEvaluator.homeForms(environment: environment, canonicalizer: canonicalizer)
+        where !homes.contains(form.path) {
+            homes.append(form.path)
+        }
+        // SAFETY-DECISION: one deny-list per spelling of the home directory, like the Scanner. The
+        // fixture waiver is requested for the home directory itself: `DenyList` accepts it ONLY for a
+        // test fixture root (strictly inside the temporary directory and named "iMopTests-…"), so for
+        // a real home it is ignored and the complete deny-list applies. Without it, every path of a
+        // fixture home would be denied by "/private/var/folders" before the home-relative entries,
+        // extensions and `.git` are even looked at, and the pre-filter could not be tested.
+        self.denyLists = homes.map { DenyList(homeDirectory: $0, waivedSystemRoots: [$0]) }
+    }
+
+    /// `true` when `path` is deny-listed (or cannot be cleaned, which also counts as denied).
+    func isDenied(_ path: String, ruleID: String) -> Bool {
+        guard case .success(let lexical) = canonicalizer.lexical(path) else { return true }
+        return isDenied(lexical, ruleID: ruleID)
+    }
+
+    func isDenied(_ path: CanonicalPath, ruleID: String) -> Bool {
+        denyLists.contains { $0.matchingEntry(for: path, ruleID: ruleID, purpose: .standard) != nil }
+    }
+}
+
+// MARK: - apps.userCaches.unknownOwner
+
+/// Folders directly in `{HOME}/Library/Caches` that cannot be attributed to an installed app
+/// (spec §6.6 `apps.userCaches.unknownOwner`, Yellow).
+///
+/// A folder is proposed only when ALL of these hold:
+/// - it is a real directory on the home volume (no symlink, file or mount point) with a plain,
+///   non-hidden name;
+/// - it is not `com.apple.*` and not deny-listed;
+/// - its name (or a reverse-DNS prefix of it) does not resolve to an installed app — and every
+///   lookup succeeded;
+/// - it is not the ancestor-or-equal of anything another rule of the catalog may target (allow-roots
+///   and glob bases inside `Library/Caches`, expanded wildcard globs), and not one of the known
+///   tool / browser cache folders (`knownToolCacheNames`). The Scanner's overlap resolution keeps the
+///   MORE cautious tier, so without this a Yellow folder here would swallow Green targets of other
+///   rules (pip, Homebrew, Firefox, …) and they would silently stop being preselected.
+///
+/// The catalog is the one injected at init; when none is injected the bundled catalog is loaded.
+public struct UnknownOwnerCachesInspector: Inspector {
+    private let catalog: RuleCatalog?
+
+    /// - Parameter catalog: the catalog whose other rules' roots are excluded. `nil` loads the
+    ///   bundled catalog at discovery time.
+    public init(catalog: RuleCatalog? = nil) {
+        self.catalog = catalog
+    }
+
+    /// `true` when a catalog was injected at init (otherwise the bundled one is loaded).
+    var hasInjectedCatalog: Bool { catalog != nil }
+
+    public var id: InspectorID { .appUserCachesUnknownOwner }
+
+    /// Known tool, browser and vendor cache folders directly in `{HOME}/Library/Caches` that are never
+    /// proposed here, whether or not a rule for them is currently enabled (compared case- and
+    /// Unicode-insensitively). The catalog-derived exclusions are added on top.
+    public static let knownToolCacheNames: [String] = [
+        // Package managers and toolchains (§6.2).
+        "Homebrew", "pip", "pip-tools", "pipenv", "CocoaPods", "org.swift.swiftpm", "org.carthage.CarthageKit",
+        "pypoetry", "ms-playwright", "Yarn", "go-build", "golangci-lint", "node-gyp", "typescript", "pnpm",
+        "deno", "bun", "uv", "Jupyter", "electron", "electron-builder",
+        // Editors and IDEs (§6.3).
+        "JetBrains", "Google", "Microsoft",
+        // Browsers (§6.6).
+        "Firefox", "Mozilla", "Microsoft Edge", "BraveSoftware", "Vivaldi", "Arc", "com.apple.Safari",
+        // Adobe (§6.7): owned by Creative Cloud apps whose bundle ids differ from the folder name.
+        "Adobe",
+        // iMop itself.
+        "com.imop.cleaner", "iMop",
+    ] + appleSystemCacheNames
+
+    /// SAFETY-DECISION (review M5): plain-named caches of always-installed macOS components (no
+    /// `com.apple.` prefix, and LaunchServices resolves none of them to an app). Apple-owned caches
+    /// are never "unknown owner". Also reserved in `RuleTargetMatcher.unknownOwnerReservedCacheNames`.
+    public static let appleSystemCacheNames: [String] = [
+        "CloudKit", "GeoServices", "PassKit", "FamilyCircle", "familycircled", "GameKit", "SiriTTS", "Siri",
+        "Metadata", "Maps", "AMSDataMigratorTool", "akd", "assetsd", "storeassetd", "storedownloadd", "storeaccountd",
+        "SpeechRecognitionCore", "CrashReporter", "ColorSync", "FontRegistry", "TemporaryItems", "WeatherKit",
+        "Safari", "SafariTechnologyPreview", "MobileAsset", "PhotosUI", "Photos", "AddressBook", "Calendar",
+        "CallHistory", "Messages", "Mail", "Notes", "Reminders", "Spotlight", "Siri Suggestions", "Translation",
+        "AppleMediaServices", "AppStore", "StoreKit", "News", "Stocks", "Weather", "Home", "Music", "TV",
+        "Podcasts", "Books", "iBooks", "FaceTime", "Shortcuts", "Wallet", "Accessibility",
+    ]
+
+    /// SafetyGate / discovery re-check (review M5): `target` can be listed and holds no `com.apple.*`
+    /// entry directly inside it (e.g. `CloudKit` holds `com.apple.*` folders), which marks it as an
+    /// Apple component's cache. `nil` when it may be offered.
+    public static func contentsProblem(target: CanonicalPath, fileSystem: any FileSystemProbe) -> String? {
+        guard let names = fileSystem.contentsOfDirectory(target.path) else { return "its contents cannot be listed" }
+        if names.contains(where: BundleIdentifierHeuristics.isApple) { return "it holds Apple (com.apple.*) data" }
+        return nil
+    }
+
+    public func discover(rule: Rule, environment: SafeCleanEnvironment) async -> InspectorOutput {
+        let walker = InspectorWalker(environment: environment)
+        let base = environment.homePath
+        guard let homeStat = walker.realDirectory(base),
+              let caches = walker.descend(from: base, through: ["Library", "Caches"], device: homeStat.device) else {
+            return InspectorOutput(candidates: [], status: .ok)
+        }
+        let device = homeStat.device
+
+        let catalog = self.catalog ?? RuleCatalog.loadBundled(environment: environment)
+        // SAFETY-DECISION: without a catalog the folders of other rules cannot be known, so nothing
+        // is proposed rather than risking a Yellow folder that hides Green targets.
+        guard !catalog.rules.isEmpty else {
+            return InspectorOutput(candidates: [], status: .unavailable("The rule catalog could not be loaded"))
+        }
+
+        let entries: [InspectorWalker.Entry]
+        switch walker.list(caches, device: device) {
+        case .absent: return InspectorOutput(candidates: [], status: .ok)
+        case .declined: return InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+        case .entries(let list): entries = list
+        }
+
+        let exclusions = Self.exclusions(catalog: catalog, ownRuleID: rule.id, environment: environment)
+        let ruleExcluded = Set(rule.excludedNames.map(PathComparison.normalize))
+        let denyFilter = InspectorDenyFilter(environment: environment)
+
+        var candidates: [DiscoveredCandidate] = []
+        for entry in entries {
+            if Task.isCancelled { return InspectorOutput(candidates: [], status: .failed(SafeCleanScanner.cancelledMessage)) }
+            guard InspectorWalker.isDescendable(entry, device: device), !entry.name.hasPrefix(".") else { continue }
+            let normalized = PathComparison.normalize(entry.name)
+            guard !BundleIdentifierHeuristics.isApple(entry.name),
+                  !ruleExcluded.contains(normalized),
+                  !exclusions.isExcluded(entry.name) else { continue }
+            guard !denyFilter.isDenied(entry.path, ruleID: rule.id) else { continue }
+            // SAFETY-DECISION: a folder named like a bundle (".app", ".bundle", …) is never proposed.
+            if SafetyGate.isBundleComponent(entry.name) { continue }
+            // SAFETY-DECISION (review M5): a folder holding com.apple.* entries (or that cannot be
+            // listed) is treated as an Apple component's cache and never proposed.
+            guard case .success(let entryPath) = PathCanonicalizer.clean(entry.path, home: nil),
+                  Self.contentsProblem(target: entryPath, fileSystem: environment.fileSystem) == nil else { continue }
+            switch Self.ownerResolution(entry.name, environment: environment) {
+            case .installed, .lookupFailed:
+                // Installed → `apps.userCaches` (Green) owns it. Lookup failed → unknown, never guessed.
+                continue
+            case .notInstalled:
+                break
+            }
+            candidates.append(DiscoveredCandidate(
+                path: entry.path,
+                displayName: entry.name,
+                owningBundleID: nil,
+                notes: [
+                    "No installed app could be matched to this cache folder (\(entry.name)).",
+                    "iMop cannot tell which program uses it; it may be re-created the next time that program runs.",
+                ]
+            ))
+        }
+        return InspectorOutput(candidates: candidates, status: .ok)
+    }
+
+    // MARK: Owner resolution
+
+    enum OwnerResolution: Sendable, Equatable {
+        case installed
+        case notInstalled
+        case lookupFailed
+    }
+
+    /// Whether `name` belongs to an installed app. A reverse-DNS name is looked up as is and through
+    /// each of its reverse-DNS prefixes with at least three labels (`com.vendor.app.helper` →
+    /// `com.vendor.app`), so helper / updater folders of installed apps are attributed to them.
+    ///
+    /// SAFETY-DECISION: any failed lookup (`nil`) means the owner is unknown, so the folder is not
+    /// proposed as "unknown owner" (it might belong to an installed app).
+    static func ownerResolution(_ name: String, environment: SafeCleanEnvironment) -> OwnerResolution {
+        guard BundleIdentifierHeuristics.looksReverseDNS(name) else {
+            // SAFETY-DECISION (M5 integration): a plain name is still asked about (as an identifier),
+            // so that a failing app lookup also withholds plain-named folders instead of offering them
+            // while it is unknown which apps are installed.
+            guard let urls = environment.applications.applicationURLs(forBundleIdentifier: name) else { return .lookupFailed }
+            return urls.isEmpty ? .notInstalled : .installed
+        }
+        var labels = name.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        var first = true
+        while first || labels.count >= 3 {
+            first = false
+            let candidate = labels.joined(separator: ".")
+            guard let urls = environment.applications.applicationURLs(forBundleIdentifier: candidate) else {
+                return .lookupFailed
+            }
+            if !urls.isEmpty { return .installed }
+            labels.removeLast()
+        }
+        return .notInstalled
+    }
+
+    // MARK: Exclusions
+
+    /// Names (and single-segment wildcard patterns) of `Library/Caches` children never proposed.
+    struct Exclusions: Sendable {
+        let names: Set<String>
+        /// Patterns whose segment right below `Library/Caches` is a wildcard and which target that
+        /// child itself (e.g. `{HOME}/Library/Caches/*.ShipIt`).
+        let childPatterns: [GlobPattern]
+
+        func isExcluded(_ name: String) -> Bool {
+            if names.contains(PathComparison.normalize(name)) { return true }
+            return childPatterns.contains { $0.matches(segment: name, at: 2) }
+        }
+    }
+
+    /// Exclusions derived from every other rule of `catalog` plus `knownToolCacheNames` and the
+    /// Chromium browsers' cache folders.
+    static func exclusions(catalog: RuleCatalog, ownRuleID: String, environment: SafeCleanEnvironment) -> Exclusions {
+        var names = Set(knownToolCacheNames.map(PathComparison.normalize))
+        for browser in ChromiumCachesInspector.knownBrowsers {
+            if let first = browser.cachesComponents.first { names.insert(PathComparison.normalize(first)) }
+        }
+        var childPatterns: [GlobPattern] = []
+
+        let home = environment.homePath
+        let canonicalizer = PathCanonicalizer(environment: environment)
+        guard case .success(let homePath) = canonicalizer.lexical(home) else {
+            return Exclusions(names: names, childPatterns: childPatterns)
+        }
+        let caches = homePath.appending("Library").appending("Caches")
+        let cachesDepth = caches.components.count
+
+        func excludeChild(of raw: String) {
+            guard case .success(let path) = canonicalizer.lexical(raw), path.isStrictlyInside(caches) else { return }
+            names.insert(PathComparison.normalize(path.components[cachesDepth]))
+        }
+
+        let expander = GlobExpander(environment: environment)
+        for other in catalog.rules where other.id != ownRuleID {
+            // Allow-roots inside Library/Caches (`{PROJECT_ROOTS}` and other tokens do not clean to an
+            // absolute path and are ignored here).
+            for raw in other.resolvedAllowRoots(home: home) { excludeChild(of: raw) }
+            guard case .glob(let patterns) = other.discovery else { continue }
+            for raw in patterns {
+                guard let pattern = GlobPattern(raw), pattern.anchor == .home, pattern.segments.count >= 3,
+                      pattern.matches(segment: "Library", at: 0), pattern.matches(segment: "Caches", at: 1) else { continue }
+                if !pattern.isWildcard(at: 2) {
+                    names.insert(PathComparison.normalize(pattern.segments[2]))
+                } else if pattern.segments.count == 3 {
+                    childPatterns.append(pattern)
+                } else {
+                    // e.g. `{HOME}/Library/Caches/*/org.sparkle-project.Sparkle`: exclude exactly the
+                    // children that currently hold a match (read-only expansion).
+                    for match in expander.expand(pattern, excludedNames: other.excludedNames) { excludeChild(of: match) }
+                }
+            }
+        }
+        return Exclusions(names: names, childPatterns: childPatterns)
+    }
+
+    /// Pure shape check for `RuleTargetMatcher`: `relative` are the components below the home
+    /// directory. The catalog-derived exclusions and the owner lookup need context and are applied by
+    /// discovery only.
+    public static func shapeMatches(relative: [String]) -> Bool {
+        guard relative.count == 3,
+              PathComparison.normalize(relative[0]) == "library",
+              PathComparison.normalize(relative[1]) == "caches" else { return false }
+        let name = relative[2]
+        guard InspectorWalker.isPlainName(name), !name.hasPrefix("."),
+              !BundleIdentifierHeuristics.isApple(name), !SafetyGate.isBundleComponent(name) else { return false }
+        let known = Set(knownToolCacheNames.map(PathComparison.normalize))
+        return !known.contains(PathComparison.normalize(name))
+    }
+}
+
+// MARK: - browser.chromium.serviceWorkerCache
+
+/// `<profile>/Service Worker/CacheStorage` of the Chromium browsers (spec §6.6
+/// `browser.chromium.serviceWorkerCache`, Yellow): same browsers and profiles as
+/// `browser.chromium.cache`, and ONLY the `CacheStorage` folder — never `Service Worker/Database`,
+/// `ScriptCache` or anything else in the profile.
+public struct ChromiumServiceWorkerInspector: Inspector {
+    public init() {}
+
+    public var id: InspectorID { .chromiumServiceWorkerCaches }
+
+    /// Components below a profile folder.
+    static let componentsBelowProfile: [String] = ["Service Worker", "CacheStorage"]
+
+    public func discover(rule: Rule, environment: SafeCleanEnvironment) async -> InspectorOutput {
+        let walker = InspectorWalker(environment: environment)
+        let base = environment.homePath
+        guard let homeStat = walker.realDirectory(base),
+              let support = walker.descend(from: base, through: ["Library", "Application Support"], device: homeStat.device) else {
+            return InspectorOutput(candidates: [], status: .ok)
+        }
+        let device = homeStat.device
+        let denyFilter = InspectorDenyFilter(environment: environment)
+
+        var candidates: [DiscoveredCandidate] = []
+        for browser in ChromiumCachesInspector.knownBrowsers {
+            if Task.isCancelled { return InspectorOutput(candidates: [], status: .failed(SafeCleanScanner.cancelledMessage)) }
+            // SAFETY-DECISION: only for installed browsers (see ElectronCachesInspector).
+            guard BundleIdentifierHeuristics.installedAppName(browser.bundleID, environment: environment) != nil else { continue }
+            guard let userData = walker.descend(from: support, through: browser.supportComponents, device: device),
+                  case .entries(let profiles) = walker.list(userData, device: device) else { continue }
+            for profile in profiles where ChromiumCachesInspector.isProfileName(profile.name) {
+                guard InspectorWalker.isDescendable(profile, device: device) else { continue }
+                // Every step (Service Worker, CacheStorage) must be a real directory on the home volume.
+                guard let path = walker.descend(from: profile.path, through: Self.componentsBelowProfile, device: device),
+                      !denyFilter.isDenied(path, ruleID: rule.id) else { continue }
+                candidates.append(DiscoveredCandidate(
+                    path: path,
+                    displayName: "\(browser.displayName) — \(profile.name) — Service Worker cache",
+                    owningBundleID: browser.bundleID,
+                    notes: [
+                        "\(browser.displayName) profile “\(profile.name)”",
+                        "Web apps may keep offline data here; they download it again the next time you open them online.",
+                    ]
+                ))
+            }
+        }
+        return InspectorOutput(candidates: candidates, status: .ok)
+    }
+
+    /// Pure shape check for `RuleTargetMatcher`: `relative` are the components below the home
+    /// directory; `owner` must be the bundle id of the browser whose user-data folder it is in.
+    public static func shapeMatches(relative: [String], owner: String?) -> Bool {
+        guard let owner, !owner.isEmpty else { return false }
+        let rel = relative.map(PathComparison.normalize)
+        let normalizedOwner = PathComparison.normalize(owner)
+        for browser in ChromiumCachesInspector.knownBrowsers where PathComparison.normalize(browser.bundleID) == normalizedOwner {
+            let base = (["Library", "Application Support"] + browser.supportComponents).map(PathComparison.normalize)
+            let tail = componentsBelowProfile.map(PathComparison.normalize)
+            guard rel.count == base.count + 1 + tail.count, Array(rel.prefix(base.count)) == base,
+                  Array(rel.suffix(tail.count)) == tail else { continue }
+            if ChromiumCachesInspector.isProfileName(relative[base.count]) { return true }
+        }
+        return false
+    }
+}

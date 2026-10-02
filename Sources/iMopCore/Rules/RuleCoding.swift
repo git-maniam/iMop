@@ -116,7 +116,7 @@ extension Discovery: Codable {
 
 // MARK: - Action
 
-/// `"quarantine"` | `"trash"` | `"permanentDelete"` | `{"command": {…}}` | `{"advisory": "instructions"}`.
+/// `"quarantine"` | `"trash"` | `"permanentDelete"` | `"bootoutAndTrash"` | `{"command": {…}}` | `{"advisory": "instructions"}`.
 extension Action: Codable {
     public init(from decoder: any Decoder) throws {
         switch try RuleCodingSupport.shape(of: decoder, typeName: "action") {
@@ -125,6 +125,7 @@ extension Action: Codable {
             case "quarantine": self = .quarantine
             case "trash": self = .trash
             case "permanentDelete": self = .permanentDelete
+            case "bootoutAndTrash": self = .bootoutAndTrash
             default: throw RuleCodingSupport.unknownCase(name, typeName: "action", decoder: decoder)
             }
         case .keyed(let name, let container):
@@ -148,6 +149,8 @@ extension Action: Codable {
             var single = encoder.singleValueContainer(); try single.encode("trash")
         case .permanentDelete:
             var single = encoder.singleValueContainer(); try single.encode("permanentDelete")
+        case .bootoutAndTrash:
+            var single = encoder.singleValueContainer(); try single.encode("bootoutAndTrash")
         case .command(let spec):
             var container = encoder.container(keyedBy: RuleJSONKey.self)
             try container.encode(spec, forKey: RuleJSONKey("command"))
@@ -162,7 +165,7 @@ extension Action: Codable {
 
 /// Argument-free predicates are bare strings (`"notOpenByAnyProcess"`); the others are single-key
 /// objects: `{"appNotRunning": ["com.apple.dt.Xcode"]}`, `{"processNotRunning": ["npm"]}`,
-/// `{"olderThan": 14}`, `{"manifestPresent": ["Cargo.lock"]}`. Keys are `Precondition.name`.
+/// `{"olderThan": 14}`, `{"projectOlderThan": 90}`, `{"manifestPresent": ["Cargo.lock"]}`. Keys are `Precondition.name`.
 extension Precondition: Codable {
     static let argumentFree: [String: Precondition] = [
         "owningAppNotRunning": .owningAppNotRunning,
@@ -175,6 +178,8 @@ extension Precondition: Codable {
         "appleSigned": .appleSigned,
         "notSelectedXcode": .notSelectedXcode,
         "uploadedToCloud": .uploadedToCloud,
+        "notTrackedByGit": .notTrackedByGit,
+        "stillOrphaned": .stillOrphaned,
     ]
 
     public init(from decoder: any Decoder) throws {
@@ -193,6 +198,8 @@ extension Precondition: Codable {
                 self = .processNotRunning(try container.decode([String].self, forKey: key))
             case "olderThan":
                 self = .olderThan(days: try container.decode(Int.self, forKey: key))
+            case "projectOlderThan":
+                self = .projectOlderThan(days: try container.decode(Int.self, forKey: key))
             case "manifestPresent":
                 self = .manifestPresent(try container.decode([String].self, forKey: key))
             default:
@@ -210,11 +217,12 @@ extension Precondition: Codable {
         case .processNotRunning(let names), .manifestPresent(let names):
             var container = encoder.container(keyedBy: RuleJSONKey.self)
             try container.encode(names, forKey: RuleJSONKey(name))
-        case .olderThan(let days):
+        case .olderThan(let days), .projectOlderThan(let days):
             var container = encoder.container(keyedBy: RuleJSONKey.self)
             try container.encode(days, forKey: RuleJSONKey(name))
         case .owningAppNotRunning, .notOpenByAnyProcess, .notInsideCloudRoot, .ownedByUser, .simulatorIdle,
-             .dockerDaemonReachable, .notMounted, .appleSigned, .notSelectedXcode, .uploadedToCloud:
+             .dockerDaemonReachable, .notMounted, .appleSigned, .notSelectedXcode, .uploadedToCloud,
+             .notTrackedByGit, .stillOrphaned:
             var single = encoder.singleValueContainer()
             try single.encode(name)
         }

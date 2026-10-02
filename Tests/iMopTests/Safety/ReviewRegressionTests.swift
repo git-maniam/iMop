@@ -39,8 +39,7 @@ struct ReviewRegressionTests {
                 let nodeModules = try fx.dir("Developer/stuff/node_modules")
                 try fx.file("Developer/stuff/node_modules/x.js", bytes: 4)
                 _ = try fx.symlink("dev", to: stuff)
-                let rule = M1.rule(id: "test.dev", allowRoots: ["{HOME}/Developer"],
-                                   discovery: .glob(["{HOME}/Developer/*"]))
+                let rule = M1.rule(id: "test.dev", allowRoots: ["{HOME}/Developer"])
                 let target = env.scanTarget(ruleID: rule.id, path: nodeModules)
                 try M1.expectAllowed(await M1.validate(env, target, rule), "control: no exclusion")
                 for exclusion in [fx.home + "/dev", fx.home + "/dev/", "~/dev", "{HOME}/dev/"] {
@@ -63,7 +62,7 @@ struct ReviewRegressionTests {
                 let drafts = try fx.dir("Developer/docs/report-drafts")
                 let other = try fx.dir("Developer/other")
                 _ = try fx.symlink("Documents", to: docs)
-                let rule = M1.rule(id: "test.dev", allowRoots: ["{HOME}/Developer"], discovery: .glob(["{HOME}/Developer/*"]))
+                let rule = M1.rule(id: "test.dev", allowRoots: ["{HOME}/Developer"])
                 try M1.expectDenyListed(await M1.validate(env, env.scanTarget(ruleID: rule.id, path: drafts), rule), "~/Documents", "inside destination")
                 try M1.expectDenyListed(await M1.validate(env, env.scanTarget(ruleID: rule.id, path: docs), rule), "~/Documents", "destination itself")
                 try M1.expectAllowed(await M1.validate(env, env.scanTarget(ruleID: rule.id, path: other), rule), "unrelated sibling")
@@ -77,7 +76,7 @@ struct ReviewRegressionTests {
                 let item = try fx.dir("Developer/notesdata/store")
                 try fx.dir("Library/Containers/com.example.app")
                 _ = try fx.symlink("Library/Containers/com.apple.Notes", to: notes)
-                let rule = M1.rule(id: "test.dev", allowRoots: ["{HOME}/Developer"], discovery: .glob(["{HOME}/Developer/*"]))
+                let rule = M1.rule(id: "test.dev", allowRoots: ["{HOME}/Developer"])
                 try M1.expectDenyListed(await M1.validate(env, env.scanTarget(ruleID: rule.id, path: item), rule),
                                         "~/Library/Containers/com.apple.*")
                 // A whole wildcard directory reached through a symlink.
@@ -111,7 +110,7 @@ struct ReviewRegressionTests {
                 let dest = try fx.dir("Developer/ab")
                 let link = try fx.symlink("Library/Application Support/AddressBook", to: dest)
                 let rule = M1.rule(id: "test.support.links", allowRoots: ["{HOME}/Library/Application Support"],
-                                   allowSymlinkTarget: true, discovery: .glob(["{HOME}/Library/Application Support/*"]))
+                                   allowSymlinkTarget: true)
                 try M1.expectDenyListed(await M1.validate(env, env.scanTarget(ruleID: rule.id, path: link), rule),
                                         "~/Library/Application Support/AddressBook")
                 let folded = fx.home + "/Library/Application Support/Addre\u{017F}\u{017F}book"

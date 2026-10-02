@@ -444,7 +444,11 @@ struct SafetyGateTests {
                 let app = "Applications/Xcode-15.app"
                 for id in ["xcode.extraInstalls", "installers.macOS"] {
                     let rule = M1.rule(id: id, tier: .red, allowRoots: ["{HOME}/Applications"], action: .trash)
-                    try M1.expectAllowed(await M1.validate(env, env.scanTarget(ruleID: id, path: app), rule), id)
+                    // Review M2: the id alone no longer grants the exception — the rule must have the
+                    // Swift-pinned shape (validated by RuleCatalog), which this ad-hoc rule does not.
+                    try TestSuite.assertFalse(RuleCatalog.validationProblems(for: rule).isEmpty, id)
+                    try M1.expectRejected(await M1.validate(env, env.scanTarget(ruleID: id, path: app), rule),
+                                          .insideBundle(component: "Xcode-15.app"), id + " ad-hoc rule with the id")
                     try M1.expectRejected(await M1.validate(env, env.scanTarget(ruleID: id, path: app + "/Contents/Info.plist"), rule),
                                           .insideBundle(component: "Xcode-15.app"), id + " inside")
                     let quarantine = M1.rule(id: id, tier: .red, allowRoots: ["{HOME}/Applications"], action: .quarantine)
@@ -591,15 +595,58 @@ struct SafetyGateTests {
 
         await TestSuite.run("Gate: command items run checks 1, 12, 14 only") {
             try await M1.withEnv { env in
+                // Milestone 4: command items are accepted only for a Swift-pinned vendor-command rule.
+                let udid = "A47CD2C9-0C68-4140-A0B1-925934040AD2"
                 let spec = CommandSpec(tool: "xcrun", arguments: ["simctl", "delete", "{ITEM}"], idempotentSafe: true)
-                let rule = M1.rule(id: "sim.unavailable", tier: .yellow, allowRoots: [], action: .command(spec))
-                let item = env.scanTarget(ruleID: rule.id, path: env.fixture.home + "/Library/Developer/CoreSimulator/Devices/UDID-1",
-                                          kind: .commandItem(argument: "UDID-1"), captureIdentity: false)
-                try M1.expectAllowed(await M1.validate(env, item, rule), "no preconditions, informational path")
-                try M1.expectRejected(await M1.validate(env, item, rule, userExclusions: ["~/Library/Developer/CoreSimulator"]),
-                                      .userExcluded(path: "~/Library/Developer/CoreSimulator"))
-                let idle = M1.rule(id: rule.id, tier: .yellow, allowRoots: [], preconditions: [.simulatorIdle], action: .command(spec))
-                guard case .rejected(.preconditionFailed(name: "simulatorIdle", _)) = await M1.validate(env, item, idle) else {
+                // The pinned rule's required preconditions (review M4) are declared; check 1 passes.
+                let rule = M1.rule(id: "simulator.devices.stale", tier: .yellow, allowRoots: [],
+                                   preconditions: [.simulatorIdle, .olderThan(days: 90)], action: .command(spec),
+                                   discovery: .inspector(.simulatorDevices))
+                let item = env.scanTarget(ruleID: rule.id, path: env.fixture.home + "/Library/Developer/CoreSimulator/Devices/" + udid,
+                                          kind: .commandItem(argument: udid), captureIdentity: false)
+                // ai.ollama pins no precondition: with none declared, only checks 1, 12 (trivially) and 14 apply.
+                let ollama = M1.rule(id: "ai.ollama", tier: .yellow, allowRoots: [],
+                                     action: .command(CommandSpec(tool: "ollama", arguments: ["rm", "{ITEM}"], idempotentSafe: false)),
+                                     discovery: .inspector(.ollamaModels))
+                let model = env.scanTarget(ruleID: ollama.id, path: env.fixture.home + "/.ollama/models/manifests/llama3",
+                                           kind: .commandItem(argument: "llama3"), captureIdentity: false)
+                try M1.expectAllowed(await M1.validate(env, model, ollama), "no preconditions, informational path")
+                try M1.expectRejected(await M1.validate(env, model, ollama, userExclusions: ["~/.ollama"]),
+                                      .userExcluded(path: "~/.ollama"))
+                // A pinned rule that drops a required precondition is refused at check 1 (review M4).
+                let dropped = M1.rule(id: rule.id, tier: .yellow, allowRoots: [], action: .command(spec),
+                                      discovery: .inspector(.simulatorDevices))
+                guard case .rejected(.doesNotMatchRule) = await M1.validate(env, item, dropped) else {
+                    throw TestError("a pinned rule without its required preconditions must be refused")
+                }
+                // Check 1 (M4): an unpinned rule id, another command, tier or discovery, or an argument
+                // that fails the {ITEM} validator is refused before any precondition runs.
+                let unpinned = M1.rule(id: "sim.other", tier: .yellow, allowRoots: [], action: .command(spec),
+                                       discovery: .inspector(.simulatorDevices))
+                let unpinnedItem = env.scanTarget(ruleID: unpinned.id, path: udid, kind: .commandItem(argument: udid), captureIdentity: false)
+                let otherCommand = M1.rule(id: rule.id, tier: .yellow, allowRoots: [],
+                                           action: .command(CommandSpec(tool: "xcrun", arguments: ["simctl", "erase", "{ITEM}"])),
+                                           discovery: .inspector(.simulatorDevices))
+                let greenTier = M1.rule(id: rule.id, tier: .green, allowRoots: [], action: .command(spec),
+                                        discovery: .inspector(.simulatorDevices))
+                let globDiscovery = M1.rule(id: rule.id, tier: .yellow, allowRoots: [], action: .command(spec))
+                for (r, t) in [(unpinned, unpinnedItem), (otherCommand, item), (greenTier, item), (globDiscovery, item)] {
+                    guard case .rejected(.doesNotMatchRule) = await M1.validate(env, t, r) else {
+                        throw TestError("\(r.id) \(r.action) \(r.tier) must be refused")
+                    }
+                }
+                for bad in ["all", "booted", "-rf", "--all", "a47cd2c9-0c68-4140-a0b1-925934040ad2", "UDID-1", "", "../x",
+                            udid + " ", udid + "\n", "\u{2212}" + udid.dropFirst()] {
+                    let t = env.scanTarget(ruleID: rule.id, path: "x", kind: .commandItem(argument: bad), captureIdentity: false)
+                    guard case .rejected(.doesNotMatchRule) = await M1.validate(env, t, rule) else {
+                        throw TestError("argument \(bad.debugDescription) must be refused")
+                    }
+                }
+                let noArgument = env.scanTarget(ruleID: rule.id, path: "x", kind: .commandItem(argument: nil), captureIdentity: false)
+                guard case .rejected(.doesNotMatchRule) = await M1.validate(env, noArgument, rule) else {
+                    throw TestError("a per-item command without an argument must be refused")
+                }
+                guard case .rejected(.preconditionFailed(name: "simulatorIdle", _)) = await M1.validate(env, item, rule) else {
                     throw TestError("simulatorIdle with no xcrun must fail closed")
                 }
                 // A command item under a file-system action is refused.

@@ -23,6 +23,8 @@ public struct PreconditionEvaluator: Sendable {
     private let environment: SafeCleanEnvironment
     private let canonicalizer: PathCanonicalizer
     private let ageThresholdOverrides: [String: Int]
+    /// Test-only (see `DenyList.init(homeDirectory:waivedSystemRoots:)`); used to validate project roots.
+    private let waivedSystemRoots: [String]
 
     static let simctlTimeout: TimeInterval = 30
     static let dockerTimeout: TimeInterval = 5
@@ -31,11 +33,28 @@ public struct PreconditionEvaluator: Sendable {
     static let simulatorAppBundleID = "com.apple.iphonesimulator"
     static let secondsPerDay: TimeInterval = 86_400
 
-    /// - Parameter ageThresholdOverrides: rule ID → days (Settings → age thresholds).
+    /// Timeout of the read-only `git ls-files` probe (`notTrackedByGit`).
+    static let gitTimeout: TimeInterval = 30
+    /// SAFETY-DECISION: the git probe only ever runs the SIP-protected system git.
+    static let systemGitPath = "/usr/bin/git"
+
+    /// - Parameter ageThresholdOverrides: rule ID → days (Settings → age thresholds). Merged with
+    ///   `environment.scanSettings.ageThresholdOverrides`; the larger value wins.
     public init(environment: SafeCleanEnvironment, ageThresholdOverrides: [String: Int] = [:]) {
         self.environment = environment
         self.canonicalizer = PathCanonicalizer(environment: environment)
-        self.ageThresholdOverrides = ageThresholdOverrides
+        // SAFETY-DECISION: both override sources may only RAISE a threshold, so merging keeps the larger.
+        self.ageThresholdOverrides = ageThresholdOverrides.merging(environment.scanSettings.ageThresholdOverrides) { max($0, $1) }
+        self.waivedSystemRoots = []
+    }
+
+    /// Test-only: fixture homes live under `/private/var/folders`, which is deny-listed.
+    @_spi(FixtureTesting)
+    public init(environment: SafeCleanEnvironment, ageThresholdOverrides: [String: Int], waivedSystemRoots: [String]) {
+        self.environment = environment
+        self.canonicalizer = PathCanonicalizer(environment: environment)
+        self.ageThresholdOverrides = ageThresholdOverrides.merging(environment.scanSettings.ageThresholdOverrides) { max($0, $1) }
+        self.waivedSystemRoots = waivedSystemRoots
     }
 
     // MARK: - Public API
@@ -87,6 +106,12 @@ public struct PreconditionEvaluator: Sendable {
             outcome = appleSigned(target)
         case .notSelectedXcode:
             outcome = await notSelectedXcode(target)
+        case .projectOlderThan(let days):
+            outcome = projectOlderThan(days: days, target: target, rule: rule)
+        case .notTrackedByGit:
+            outcome = await notTrackedByGit(target)
+        case .stillOrphaned:
+            outcome = await stillOrphaned(target)
         case .uploadedToCloud:
             // SAFETY-DECISION: always false in v1. iCloud eviction stays Advisory (Finder's
             // "Remove Download"); iMop never acts on ubiquitous items.
@@ -219,6 +244,200 @@ public struct PreconditionEvaluator: Sendable {
             }
         }
         return latest
+    }
+
+    // MARK: - Projects (spec §6.5)
+
+    /// Every rebuild manifest of every ProjectScanner artifact kind (at most one `*` each).
+    ///
+    /// SAFETY-DECISION: `projectOlderThan` considers ALL of these that are present beside the artifact
+    /// (plus the rule's own `manifestPresent` names), not only the artifact's own manifest: more files
+    /// can only make the project look more recently used.
+    static let projectManifestPatterns: [String] = [
+        "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "bun.lock",
+        "Cargo.toml", "Cargo.lock",
+        "pyproject.toml", "requirements*.txt", "uv.lock", "poetry.lock", "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock",
+        "Podfile", "Podfile.lock",
+        "next.config.*",
+        "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+        "Package.swift", "Package.resolved",
+    ]
+
+    private func projectOlderThan(days declared: Int, target: ScanTarget, rule: Rule) -> (Bool, String) {
+        guard declared >= 0 else { return (false, "Invalid age threshold") }
+        var days = declared
+        if let override = ageThresholdOverrides[rule.id], override > days { days = override }
+        guard let lastUsed = projectLastUsedDate(target, rule: rule) else {
+            return (false, "Could not determine when this project was last used")
+        }
+        let age = environment.clock.now.timeIntervalSince(lastUsed)
+        guard age > TimeInterval(days) * Self.secondsPerDay else {
+            return (false, "Project used within the last \(days) day\(days == 1 ? "" : "s")")
+        }
+        return (true, "Project not used in over \(days) day\(days == 1 ? "" : "s")")
+    }
+
+    /// Max `lstat` mtime of every manifest beside the artifact, `.git/index` and `.git/HEAD`.
+    ///
+    /// SAFETY-DECISION (fail closed → nil): an unreadable project listing; a listed manifest or git
+    /// file that cannot be lstat'ed; a manifest or git file that is a symlink; a `.git` that is not a
+    /// plain directory (worktree / submodule `.git` files point elsewhere, so the real activity cannot
+    /// be measured); or none of the files present at all.
+    func projectLastUsedDate(_ target: ScanTarget, rule: Rule) -> Date? {
+        let fs = environment.fileSystem
+        guard let path = lexicalPath(target), let project = path.parent, !project.components.isEmpty else { return nil }
+        guard let siblings = fs.contentsOfDirectory(project.path) else { return nil }
+        var patterns = Self.projectManifestPatterns
+        for case .manifestPresent(let names) in rule.preconditions {
+            for name in names where !patterns.contains(name) { patterns.append(name) }
+        }
+        var latest: Date?
+        func include(_ date: Date) { latest = max(latest ?? date, date) }
+
+        let artifactName = path.lastComponent.map(PathComparison.normalize)
+        for name in siblings where Self.isPlainName(name) {
+            guard PathComparison.normalize(name) != artifactName else { continue }
+            guard patterns.contains(where: { Self.manifestPatternMatches($0, name) }) else { continue }
+            guard let stat = fs.lstat(project.appending(name).path), !stat.isSymlink else { return nil }
+            include(stat.modificationDate)
+        }
+        if let gitName = siblings.first(where: { PathComparison.normalize($0) == ".git" }) {
+            let git = project.appending(gitName)
+            guard let gitStat = fs.lstat(git.path), gitStat.isDirectory, !gitStat.isSymlink,
+                  let gitChildren = fs.contentsOfDirectory(git.path) else { return nil }
+            for wanted in ["index", "HEAD"] {
+                guard let child = gitChildren.first(where: { PathComparison.normalize($0) == PathComparison.normalize(wanted) }) else {
+                    continue // missing optional file
+                }
+                guard Self.isPlainName(child), let stat = fs.lstat(git.appending(child).path), !stat.isSymlink else { return nil }
+                include(stat.modificationDate)
+            }
+        }
+        return latest
+    }
+
+    private func notTrackedByGit(_ target: ScanTarget) async -> (Bool, String) {
+        let tracked = (false, "Could not confirm that git does not track it — treated as tracked")
+        let fs = environment.fileSystem
+        guard let path = lexicalPath(target), let name = path.lastComponent, let project = path.parent,
+              !project.components.isEmpty else { return tracked }
+        // SAFETY-DECISION: the artifact name must be exactly one of the reviewed ProjectScanner names
+        // (it becomes a git pathspec argument).
+        guard CommandAllowList.projectArtifactNames.contains(name) else { return tracked }
+
+        // SAFETY-DECISION: the project directory must be canonical (no symlink on the way) and inside
+        // (or equal to) one of the user's validated project roots before git is ever pointed at it.
+        guard case .success(let resolvedProject) = canonicalizer.canonicalize(project.path), resolvedProject == project else {
+            return tracked
+        }
+        let roots = ProjectRoots.resolve(environment: environment, waivedSystemRoots: waivedSystemRoots)
+        guard roots.contains(where: { project.isInsideOrEqual($0) }) else {
+            return (false, "Not inside one of your project folders")
+        }
+
+        // SAFETY-DECISION: a repository can live in the project folder or in any folder above it
+        // (monorepos, a dotfiles repository in the home folder): every directory from the project up
+        // to and including the home folder is checked for `.git`. Git itself then discovers the
+        // repository from the project directory. A directory on the way that cannot be listed could
+        // hide a repository → treated as tracked.
+        let homes = Self.homeForms(environment: environment, canonicalizer: canonicalizer)
+        guard homes.contains(where: { project.isStrictlyInside($0) }) else { return tracked }
+        var current: CanonicalPath? = project
+        var repository: CanonicalPath?
+        while let directory = current, !directory.components.isEmpty {
+            guard let entries = fs.contentsOfDirectory(directory.path) else { return tracked }
+            // SAFETY-DECISION (review M5): git is not the only version-control system. A Mercurial,
+            // Subversion, Jujutsu, Sapling, Fossil, Bazaar, … checkout anywhere from the project up to
+            // the home folder may track the artifact, and iMop never runs those tools: treated as
+            // tracked. (Checked before `.git`, so a colocated checkout is refused too.)
+            if entries.contains(where: Self.isOtherVersionControlMarker) {
+                return (false, "Inside a non-git version-control checkout — treated as tracked")
+            }
+            if entries.contains(where: { PathComparison.normalize($0) == ".git" }) {
+                repository = directory
+                break
+            }
+            if homes.contains(directory) { break }
+            current = directory.parent
+        }
+        guard let repository else { return (true, "Not in a git repository") }
+        // SAFETY-DECISION (review M5): git is only asked when the artifact's OWN folder is the
+        // repository's top level (like ProjectScanner's `mayPropose`). Inside a monorepo the probe's
+        // `-C` prefix would be matched case-sensitively by git even with `--icase-pathspecs`, so a
+        // differently-cased index prefix could read as "untracked": treated as tracked instead.
+        guard repository == project else {
+            return (false, "Part of a git repository in a parent folder — treated as tracked")
+        }
+
+        // SAFETY-DECISION: only the SIP-protected system git is ever run, read-only, through the
+        // allow-listed probe; every outcome except a clean "did not match" counts as tracked.
+        guard let git = environment.commands.resolveExecutable("git"), git == Self.systemGitPath else { return tracked }
+        // SAFETY-DECISION (review M5): `/usr/bin/git` is the xcode-select shim. Without Xcode or the
+        // Command Line Tools, running it opens the "install developer tools" dialog (a visible side
+        // effect, once per validation). The active developer directory (`xcode-select -p`, read-only,
+        // no dialog) must contain `usr/bin/git` first; otherwise git is never run → tracked.
+        guard await developerToolsProvideGit() else {
+            return (false, "Git is not available (no developer tools installed) — treated as tracked")
+        }
+        let arguments = CommandAllowList.gitTrackedProbeArguments(projectDirectory: project.path, artifactName: name)
+        guard CommandAllowList.gitProbeAllowed(arguments: arguments, projectRoots: roots) else { return tracked }
+        let result = await environment.commands.run(executable: git, arguments: arguments, timeout: Self.gitTimeout,
+                                                    purpose: .readOnly)
+        guard Self.gitReportsUntracked(result) else {
+            if result.exitCode == 0 && !result.timedOut {
+                return (false, "Tracked by git — iMop never removes files that are part of your repository")
+            }
+            return tracked
+        }
+        return (true, "Not tracked by git")
+    }
+
+    /// Names (compared case- and Unicode-insensitively) of the working-copy markers of version-control
+    /// systems other than git.
+    static let otherVersionControlMarkers: Set<String> = [
+        ".hg", ".svn", ".jj", ".sl", ".fslckout", "_fossil_", ".bzr", "_darcs", ".pijul", "cvs",
+    ]
+
+    /// `true` when `name` is a non-git version-control marker (`otherVersionControlMarkers`).
+    public static func isOtherVersionControlMarker(_ name: String) -> Bool {
+        otherVersionControlMarkers.contains(PathComparison.normalize(name))
+    }
+
+    /// `true` when the active developer directory (`xcode-select -p`) holds a `usr/bin/git` file, so
+    /// running the `/usr/bin/git` shim cannot open the developer-tools install dialog.
+    private func developerToolsProvideGit() async -> Bool {
+        guard let tool = environment.commands.resolveExecutable("xcode-select") else { return false }
+        let result = await environment.commands.run(executable: tool, arguments: ["-p"], timeout: Self.xcodeSelectTimeout,
+                                                    purpose: .readOnly)
+        guard result.succeeded, !result.timedOut else { return false }
+        let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !output.isEmpty, !output.contains("\n"), output.hasPrefix("/"),
+              case .success(let developer) = PathCanonicalizer.clean(output, home: nil) else { return false }
+        let git = developer.appending("usr").appending("bin").appending("git")
+        guard let info = environment.fileSystem.stat(git.path), info.isRegularFile else { return false }
+        return true
+    }
+
+    /// `true` only for a completed run with exit status 1 whose stderr is git's pathspec "did not
+    /// match" error (`error: pathspec 'X' did not match any file(s) known to git`).
+    static func gitReportsUntracked(_ result: CommandResult) -> Bool {
+        guard !result.timedOut, result.exitCode == 1 else { return false }
+        let stderr = result.stderr.lowercased()
+        return stderr.contains("pathspec") && stderr.contains("did not match")
+    }
+
+    // MARK: - OrphanDetector (spec §6.9, Milestone 6)
+
+    /// Conditions 2, 3 and 4 of spec §6.9 for `target.owningBundleID`, re-checked at plan AND execute
+    /// time. SAFETY-DECISION: fails closed — no owner, an owner that is not an orphan-candidate
+    /// identifier, or any lookup that errs / times out / answers ambiguously means "not orphaned".
+    private func stillOrphaned(_ target: ScanTarget) async -> (Bool, String) {
+        guard let owner = target.owningBundleID?.trimmingCharacters(in: .whitespacesAndNewlines), !owner.isEmpty,
+              RuleTargetMatcher.isOrphanCandidateIdentifier(owner) else {
+            return (false, "The app this belongs to is unknown — treated as installed")
+        }
+        let verdict = await StillOrphanedCheck.evaluate(identifier: owner, environment: environment)
+        return (verdict.orphaned, verdict.detail)
     }
 
     // MARK: - Manifests
@@ -517,5 +736,144 @@ struct BundleIDPattern: Sendable {
     func matches(_ bundleID: String) -> Bool {
         let candidate = PathComparison.normalize(bundleID)
         return isPrefix ? candidate.hasPrefix(fixed) : candidate == fixed
+    }
+}
+
+
+// MARK: - OrphanDetector conditions 2–4 (spec §6.9)
+
+/// The live part of the OrphanDetector's decision (spec §6.9 conditions 2, 3, 4), shared by the
+/// `stillOrphaned` precondition. Read-only: LaunchServices / Spotlight lookups, the running-app and
+/// process lists, and the read-only `/usr/sbin/pkgutil --pkgs`.
+///
+/// SAFETY-DECISION: every answer that is not a definite "absent" (nil, error, timeout, truncated or
+/// empty receipt list, an unexpected executable path) makes the identifier NOT orphaned.
+public enum StillOrphanedCheck {
+    public struct Verdict: Sendable, Hashable {
+        public let orphaned: Bool
+        public let detail: String
+    }
+
+    /// SAFETY-DECISION: pkgutil is only ever run from this SIP-protected path.
+    public static let pkgutilPath = "/usr/sbin/pkgutil"
+    public static let pkgutilArguments = ["--pkgs"]
+    static let pkgutilTimeout: TimeInterval = 30
+
+    public static func evaluate(identifier: String, appName: String? = nil, environment: SafeCleanEnvironment) async -> Verdict {
+        let ids = relatedIdentifiers(identifier)
+        // Condition 2: LaunchServices AND Spotlight must both answer, and both find nothing.
+        for id in ids {
+            guard let urls = environment.applications.applicationURLs(forBundleIdentifier: id) else {
+                return Verdict(orphaned: false, detail: "Could not check whether the app is installed — treated as installed")
+            }
+            if !urls.isEmpty { return Verdict(orphaned: false, detail: "The app (\(id)) is installed") }
+            guard let paths = environment.applications.spotlightApplicationPaths(forBundleIdentifier: id) else {
+                return Verdict(orphaned: false, detail: "Spotlight could not confirm the app is gone — treated as installed")
+            }
+            if !paths.isEmpty { return Verdict(orphaned: false, detail: "Spotlight found the app (\(id)) on a volume") }
+        }
+        // Condition 3: no related running app or process.
+        if let running = runningEvidence(ids: ids, appName: appName, environment: environment) {
+            return Verdict(orphaned: false, detail: running)
+        }
+        // Condition 4: no package receipt referencing it.
+        guard let packages = await packageReceiptIDs(environment: environment) else {
+            return Verdict(orphaned: false, detail: "Could not read the installer receipts (pkgutil) — treated as installed")
+        }
+        if let hit = packages.first(where: { receiptReferences($0, ids: ids) }) {
+            return Verdict(orphaned: false, detail: "An installer receipt (\(hit)) still refers to it")
+        }
+        return Verdict(orphaned: true, detail: "No installed app, running process or installer receipt refers to it")
+    }
+
+    /// The identifier plus the bundle identifier it may stand for: `group.<rest>` → `<rest>`,
+    /// `<TEAMID>.<rest>` → `<rest>` (more names checked can only make "orphaned" rarer).
+    public static func relatedIdentifiers(_ identifier: String) -> [String] {
+        var result = [identifier]
+        let labels = identifier.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        if labels.count >= 3 {
+            let first = labels[0]
+            let rest = labels.dropFirst().joined(separator: ".")
+            if first.lowercased() == "group" || looksLikeTeamID(first), !result.contains(rest) { result.append(rest) }
+        }
+        return result
+    }
+
+    /// 10 ASCII upper-case letters or digits (an Apple Developer Team ID).
+    public static func looksLikeTeamID(_ label: String) -> Bool {
+        let scalars = Array(label.unicodeScalars)
+        return scalars.count == 10 && scalars.allSatisfy { ("A"..."Z").contains($0) || ("0"..."9").contains($0) }
+    }
+
+    /// A reason when something related is (or may be) running; `nil` when definitely nothing is.
+    ///
+    /// SAFETY-DECISION: a running bundle id counts when it equals an identifier or one is a dotted
+    /// prefix of the other (`com.x.app` vs `com.x.app.helper`), case-insensitively; a process counts
+    /// when its name equals the identifier's last label or the app name (with proc_name's 15+
+    /// character truncation treated as a match). An unreadable list counts as running.
+    static func runningEvidence(ids: [String], appName: String?, environment: SafeCleanEnvironment) -> String? {
+        guard let apps = environment.runningApplications.runningBundleIdentifiers() else {
+            return "Could not check which apps are running — treated as running"
+        }
+        let wanted = ids.map(PathComparison.normalize)
+        for app in apps {
+            let running = PathComparison.normalize(app)
+            guard !running.isEmpty else { continue }
+            if wanted.contains(where: { $0 == running || $0.hasPrefix(running + ".") || running.hasPrefix($0 + ".") }) {
+                return "A related app (\(app)) is running"
+            }
+        }
+        guard let processes = environment.processes.runningProcessNames() else {
+            return "Could not check which processes are running — treated as running"
+        }
+        var names = Set<String>()
+        for id in ids {
+            if let last = id.split(separator: ".").last.map(String.init), !last.isEmpty { names.insert(PathComparison.normalize(last)) }
+        }
+        if let appName = appName?.trimmingCharacters(in: .whitespacesAndNewlines), !appName.isEmpty {
+            names.insert(PathComparison.normalize(appName))
+        }
+        for process in processes {
+            let candidate = PathComparison.normalize(process)
+            guard !candidate.isEmpty else { continue }
+            if names.contains(where: { $0 == candidate || (candidate.count >= 15 && $0.hasPrefix(candidate)) }) {
+                return "A related process (\(process)) is running"
+            }
+        }
+        return nil
+    }
+
+    /// Package ids from `/usr/sbin/pkgutil --pkgs`, or `nil` when they could not be read completely.
+    static func packageReceiptIDs(environment: SafeCleanEnvironment) async -> [String]? {
+        guard let pkgutil = environment.commands.resolveExecutable("pkgutil"), pkgutil == pkgutilPath else { return nil }
+        let result = await environment.commands.run(executable: pkgutil, arguments: pkgutilArguments,
+                                                    timeout: pkgutilTimeout, purpose: .readOnly)
+        guard result.succeeded, !result.timedOut else { return nil }
+        return parsePackageIDs(result.stdout)
+    }
+
+    /// One package id per non-empty line. SAFETY-DECISION: `nil` when the output was truncated, a line
+    /// contains control characters, or there is no package at all (every Mac has Apple's receipts, so
+    /// an empty list means the answer is not trustworthy).
+    public static func parsePackageIDs(_ output: String) -> [String]? {
+        var ids: [String] = []
+        for raw in output.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            if line.hasPrefix("[truncated") { return nil }
+            guard !line.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return nil }
+            ids.append(line)
+        }
+        return ids.isEmpty ? nil : ids
+    }
+
+    /// Spec §6.9 condition 4: the receipt equals, starts with or contains an identifier, or vice
+    /// versa (case-insensitive).
+    public static func receiptReferences(_ packageID: String, ids: [String]) -> Bool {
+        let package = PathComparison.normalize(packageID)
+        guard !package.isEmpty else { return false }
+        return ids.map(PathComparison.normalize).contains { id in
+            !id.isEmpty && (package.contains(id) || id.contains(package))
+        }
     }
 }

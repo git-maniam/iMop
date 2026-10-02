@@ -649,6 +649,1548 @@
         "notOpenByAnyProcess"
       ],
       "action": "quarantine"
+    },
+    {
+      "id": "simulator.unavailable",
+      "category": "developer",
+      "tier": "green",
+      "title": "Unavailable simulators",
+      "explanation": "Simulator devices whose iOS, iPadOS, watchOS, tvOS or visionOS version is no longer supported by the installed Xcode, so they can no longer be started. They are removed with Xcode's own tool (xcrun simctl delete unavailable).",
+      "whatYouLose": "Apps and data installed in those simulators, which can no longer run anyway. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Nothing needs to come back. If you install that simulator version again, you can create new devices for it in Xcode.",
+      "discovery": {
+        "inspector": "simulatorUnavailable"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/CoreSimulator/Devices"
+      ],
+      "preconditions": [
+        "simulatorIdle"
+      ],
+      "action": {
+        "command": {
+          "tool": "xcrun",
+          "arguments": [
+            "simctl",
+            "delete",
+            "unavailable"
+          ],
+          "dryRunArguments": [
+            "simctl",
+            "list",
+            "devices",
+            "unavailable",
+            "-j"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "simulator.devices.stale",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Unused simulator devices",
+      "explanation": "Simulator devices that have not been used for more than 90 days. Each device is removed separately with Xcode's own tool (xcrun simctl delete).",
+      "whatYouLose": "Apps & data installed in that simulator. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "You can create a new simulator device in Xcode at any time; apps have to be installed into it again.",
+      "discovery": {
+        "inspector": "simulatorDevices"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/CoreSimulator/Devices"
+      ],
+      "preconditions": [
+        "simulatorIdle",
+        {
+          "olderThan": 90
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "xcrun",
+          "arguments": [
+            "simctl",
+            "delete",
+            "{ITEM}"
+          ],
+          "dryRunArguments": [
+            "simctl",
+            "list",
+            "devices",
+            "-j"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "simulator.runtimes",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Simulator runtimes",
+      "explanation": "Downloaded simulator runtimes (iOS, watchOS, tvOS, visionOS) that Xcode uses to run simulators of one OS version. Each runtime is removed with Xcode's own tool (xcrun simctl runtime delete); iMop never touches the runtime files itself.",
+      "whatYouLose": "You can no longer run simulators of that OS version, and the simulator devices that use it become unavailable. Downloading the runtime again takes a long time and needs an internet connection. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Download the runtime again in Xcode (Settings, Components) or when Xcode asks for it.",
+      "discovery": {
+        "inspector": "simulatorRuntimes"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/CoreSimulator"
+      ],
+      "preconditions": [
+        "simulatorIdle"
+      ],
+      "action": {
+        "command": {
+          "tool": "xcrun",
+          "arguments": [
+            "simctl",
+            "runtime",
+            "delete",
+            "{ITEM}"
+          ],
+          "dryRunArguments": [
+            "simctl",
+            "runtime",
+            "list",
+            "-j"
+          ],
+          "timeoutSeconds": 1800,
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "homebrew.cleanup",
+      "category": "developer",
+      "tier": "green",
+      "title": "Homebrew old versions and downloads",
+      "explanation": "Old versions of the packages you installed with Homebrew and the downloads Homebrew keeps in its cache. They are removed with Homebrew's own command (brew cleanup --prune=all). iMop never runs brew autoremove, which can remove packages you rely on.",
+      "whatYouLose": "Nothing you use: the current versions of your packages stay installed. You can no longer switch back to an older version without downloading it again. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Homebrew downloads packages again when you install or upgrade them.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/Homebrew"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "brew"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "brew",
+          "arguments": [
+            "cleanup",
+            "--prune=all"
+          ],
+          "dryRunArguments": [
+            "cleanup",
+            "--prune=all",
+            "-n"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "npm.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "npm package cache",
+      "explanation": "Package files that npm has downloaded and keeps so later installs are faster (the _cacache folder in npm's cache). It is cleared with npm's own command (npm cache clean --force).",
+      "whatYouLose": "Nothing you created; the node_modules folders of your projects are not affected. Later installs download packages again, which takes time and needs an internet connection. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "npm fills the cache again as you install packages.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/.npm"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "npm",
+            "node"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "npm",
+          "arguments": [
+            "cache",
+            "clean",
+            "--force"
+          ],
+          "dryRunArguments": [
+            "config",
+            "get",
+            "cache"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "yarn.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Yarn global cache",
+      "explanation": "Package files that Yarn has downloaded into its global cache folder (the folder reported by yarn cache dir). It is cleared with Yarn's own command (yarn cache clean). A project's own .yarn/cache folder is never touched, because it may be committed to the project.",
+      "whatYouLose": "Nothing you created; your projects and their node_modules folders are not affected. Later installs download packages again, which takes time and needs an internet connection. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Yarn fills its cache again as you install packages.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/Yarn"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "yarn"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "yarn",
+          "arguments": [
+            "cache",
+            "clean"
+          ],
+          "dryRunArguments": [
+            "cache",
+            "dir"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "pnpm.store",
+      "category": "developer",
+      "tier": "green",
+      "title": "pnpm store (unused packages)",
+      "explanation": "The shared store where pnpm keeps every package version it has downloaded (the folder reported by pnpm store path). pnpm's own command (pnpm store prune) removes only packages that no project references any more.",
+      "whatYouLose": "Nothing a project still uses. A package removed from the store has to be downloaded again if a project needs it later. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "pnpm adds packages to the store again as you install them.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/pnpm"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "pnpm"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "pnpm",
+          "arguments": [
+            "store",
+            "prune"
+          ],
+          "dryRunArguments": [
+            "store",
+            "path"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "bun.cache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Bun package cache",
+      "explanation": "Package files that Bun has downloaded and keeps in its global cache folder (the one reported by bun pm cache, usually {HOME}/.bun/install/cache) so later installs are faster. It is cleared with Bun's own command (bun pm cache rm).",
+      "whatYouLose": "Nothing you created; the node_modules folders of your projects are not affected. Later installs download packages again, which takes time and needs an internet connection. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Bun fills the cache again as you install packages.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/.bun/install/cache"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "bun"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "bun",
+          "arguments": [
+            "pm",
+            "cache",
+            "rm"
+          ],
+          "dryRunArguments": [
+            "pm",
+            "cache"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "uv.cache.prune",
+      "category": "developer",
+      "tier": "green",
+      "title": "uv cache (unused entries)",
+      "explanation": "Entries in uv's cache (the folder reported by uv cache dir) that uv no longer needs, such as old package versions and leftovers from interrupted operations. They are removed with uv's own command (uv cache prune).",
+      "whatYouLose": "Nothing you created; virtual environments and Python installations are not affected. Some packages may have to be downloaded again later. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "uv adds entries to its cache again as you install packages.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/.cache/uv"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "uv"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "uv",
+          "arguments": [
+            "cache",
+            "prune"
+          ],
+          "dryRunArguments": [
+            "cache",
+            "dir"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "uv.cache.clean",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "uv cache (everything)",
+      "explanation": "The entire uv cache (the folder reported by uv cache dir): every Python package and build that uv keeps for reuse. It is removed with uv's own command (uv cache clean).",
+      "whatYouLose": "Nothing you created. Every package has to be downloaded again, and some built again, the next time a project or tool needs it, which takes time and needs an internet connection. Virtual environments normally keep working, unless uv was configured to link packages into them with symbolic links. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "uv fills its cache again as you install packages.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/.cache/uv"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "uv"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "uv",
+          "arguments": [
+            "cache",
+            "clean"
+          ],
+          "dryRunArguments": [
+            "cache",
+            "dir"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "go.buildCache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Go build cache",
+      "explanation": "Compiled packages and test results that the go command keeps to make later builds faster (the folder reported by go env GOCACHE). It is cleared with Go's own command (go clean -cache).",
+      "whatYouLose": "Nothing you created; your source code and installed programs are not affected. The next builds and test runs are slower while the cache fills again. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "The go command fills the build cache again as you build and test.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/go-build"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "go"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "go",
+          "arguments": [
+            "clean",
+            "-cache"
+          ],
+          "dryRunArguments": [
+            "env",
+            "GOCACHE"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "go.modCache",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Go module cache",
+      "explanation": "Source code of every Go module version the go command has downloaded (the folder reported by go env GOMODCACHE). Its files are read-only, so it is removed only with Go's own command (go clean -modcache).",
+      "whatYouLose": "Nothing you created. Every module has to be downloaded again before your projects build, which takes time and needs an internet connection; builds that must work offline fail until then. If you edited files in the module cache by hand, those edits are lost. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "The go command downloads modules again when a build needs them.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/go/pkg/mod"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "go"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "go",
+          "arguments": [
+            "clean",
+            "-modcache"
+          ],
+          "dryRunArguments": [
+            "env",
+            "GOMODCACHE"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "cocoapods.cache.command",
+      "category": "developer",
+      "tier": "green",
+      "title": "CocoaPods download cache (pod command)",
+      "explanation": "Pod source code and specifications that CocoaPods has downloaded and keeps so it can install the same pods into your projects without downloading them again. When the pod command is installed, the cache is cleared with CocoaPods' own command (pod cache clean --all) instead of being moved to Quarantine.",
+      "whatYouLose": "Nothing you created; the Pods folders inside your projects are not affected. The next pod install downloads the pods again, which takes time and needs an internet connection. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "CocoaPods downloads pods again the next time you run pod install or pod update.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/CocoaPods"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "pod"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "pod",
+          "arguments": [
+            "cache",
+            "clean",
+            "--all"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "flutter.pubCache",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Dart and Flutter package cache",
+      "explanation": "Dart and Flutter packages downloaded into {HOME}/.pub-cache, including packages fetched from git and globally activated Dart tools. It is cleared with Flutter's own command (flutter pub cache clean -f).",
+      "whatYouLose": "Every Dart and Flutter package has to be downloaded again before your projects build, which takes time and needs an internet connection. Globally activated Dart tools (dart pub global activate) must be activated again, and any change you made to a package inside the cache is lost. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Running flutter pub get (or dart pub get) in a project downloads its packages again.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/.pub-cache"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "dart",
+            "flutter"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "flutter",
+          "arguments": [
+            "pub",
+            "cache",
+            "clean",
+            "-f"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "android.avd",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Android virtual devices",
+      "explanation": "Android emulator devices (AVDs) stored in {HOME}/.android/avd. Each device is removed separately with the Android SDK's own tool (avdmanager delete avd). When avdmanager is not installed in a trusted location, iMop only shows the device and explains how to remove it in Android Studio.",
+      "whatYouLose": "The apps, data, settings and snapshots inside that virtual device. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "You can create a new virtual device in Android Studio's Device Manager at any time; apps have to be installed into it again.",
+      "discovery": {
+        "inspector": "packageManagerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/.android/avd"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "emulator",
+            "qemu-system-aarch64",
+            "qemu-system-x86_64"
+          ]
+        }
+      ],
+      "action": {
+        "command": {
+          "tool": "avdmanager",
+          "arguments": [
+            "delete",
+            "avd",
+            "-n",
+            "{ITEM}"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "docker.danglingImages",
+      "category": "developer",
+      "tier": "green",
+      "title": "Dangling Docker images",
+      "explanation": "Docker images that no longer have a name or tag, usually left behind when an image is rebuilt or updated. They are removed with Docker's own command (docker image prune -f), which removes dangling images only.",
+      "whatYouLose": "Nothing you use by name: tagged images, containers and volumes are not affected. Old untagged image versions are gone. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Docker creates new image layers as you build or pull images.",
+      "discovery": {
+        "inspector": "dockerSystem"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Containers/com.docker.docker"
+      ],
+      "preconditions": [
+        "dockerDaemonReachable"
+      ],
+      "action": {
+        "command": {
+          "tool": "docker",
+          "arguments": [
+            "image",
+            "prune",
+            "-f"
+          ],
+          "dryRunArguments": [
+            "system",
+            "df"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "docker.buildCache",
+      "category": "developer",
+      "tier": "green",
+      "title": "Docker build cache",
+      "explanation": "Cached build steps that Docker keeps to make later image builds faster. They are removed with Docker's own command (docker builder prune -f).",
+      "whatYouLose": "Nothing you created; your images, containers and volumes are not affected. The next image builds are slower and may download base images and packages again. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Docker fills the build cache again as you build images.",
+      "discovery": {
+        "inspector": "dockerSystem"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Containers/com.docker.docker"
+      ],
+      "preconditions": [
+        "dockerDaemonReachable"
+      ],
+      "action": {
+        "command": {
+          "tool": "docker",
+          "arguments": [
+            "builder",
+            "prune",
+            "-f"
+          ],
+          "dryRunArguments": [
+            "system",
+            "df"
+          ],
+          "idempotentSafe": true
+        }
+      }
+    },
+    {
+      "id": "docker.unusedImages",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Unused Docker images",
+      "explanation": "Docker images that no container uses, including tagged images you pulled or built yourself. They are removed with Docker's own command (docker image prune -a -f).",
+      "whatYouLose": "Images you need again have to be pulled or built again, which takes time and needs an internet connection. An image you built locally and never pushed is gone unless you can build it again. Containers and volumes are not affected. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Docker downloads or builds images again when you run or build something that needs them.",
+      "discovery": {
+        "inspector": "dockerSystem"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Containers/com.docker.docker"
+      ],
+      "preconditions": [
+        "dockerDaemonReachable"
+      ],
+      "action": {
+        "command": {
+          "tool": "docker",
+          "arguments": [
+            "image",
+            "prune",
+            "-a",
+            "-f"
+          ],
+          "dryRunArguments": [
+            "system",
+            "df"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "docker.stoppedContainers",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Stopped Docker containers",
+      "explanation": "Docker containers that have exited and are not running. A container can hold data written inside it (files, logs, or a database not stored in a volume). They are removed with Docker's own command (docker container prune -f).",
+      "whatYouLose": "Every stopped container, and any data that exists only inside it. Volumes are not removed. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Nothing comes back by itself; you can create containers again from their images.",
+      "discovery": {
+        "inspector": "dockerSystem"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Containers/com.docker.docker"
+      ],
+      "preconditions": [
+        "dockerDaemonReachable"
+      ],
+      "action": {
+        "command": {
+          "tool": "docker",
+          "arguments": [
+            "container",
+            "prune",
+            "-f"
+          ],
+          "dryRunArguments": [
+            "system",
+            "df"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "docker.volumes",
+      "category": "developer",
+      "tier": "red",
+      "title": "Unused Docker volumes",
+      "explanation": "Docker volumes that no container uses (dangling volumes). Volumes are where containers keep their permanent data: databases often live here. Each volume is removed separately with Docker's own command (docker volume rm), only after you confirm that volume.",
+      "whatYouLose": "Everything stored in the volume, such as the contents of a database. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Nothing comes back. A container that needs the volume again starts with an empty one.",
+      "discovery": {
+        "inspector": "dockerSystem"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Containers/com.docker.docker"
+      ],
+      "preconditions": [
+        "dockerDaemonReachable"
+      ],
+      "action": {
+        "command": {
+          "tool": "docker",
+          "arguments": [
+            "volume",
+            "rm",
+            "{ITEM}"
+          ],
+          "dryRunArguments": [
+            "system",
+            "df"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "ai.ollama",
+      "category": "ai",
+      "tier": "yellow",
+      "title": "Ollama models",
+      "explanation": "AI models downloaded with Ollama. Each model is removed separately with Ollama's own command (ollama rm), which keeps the parts that other models still share; iMop never deletes model files itself.",
+      "whatYouLose": "The model can no longer be used until you download it again, which can take a long time because models are often several gigabytes. A custom model you created from a Modelfile has to be created again. This cannot be undone: the command runs directly, nothing is moved to Quarantine and nothing can be restored.",
+      "howItRegenerates": "Download the model again with ollama pull, or Ollama downloads it the next time you run it.",
+      "discovery": {
+        "inspector": "ollamaModels"
+      },
+      "allowRoots": [
+        "{HOME}/.ollama/models"
+      ],
+      "preconditions": [],
+      "action": {
+        "command": {
+          "tool": "ollama",
+          "arguments": [
+            "rm",
+            "{ITEM}"
+          ],
+          "dryRunArguments": [
+            "list"
+          ],
+          "idempotentSafe": false
+        }
+      }
+    },
+    {
+      "id": "xcode.derivedData.orphaned",
+      "category": "developer",
+      "tier": "green",
+      "title": "Xcode build data for deleted projects",
+      "explanation": "Intermediate build products, indexes and logs Xcode keeps in DerivedData for projects that no longer exist on this Mac. Only folders whose recorded project (WorkspacePath in the folder's info.plist) is gone are included; folders without a readable info.plist are never treated as orphaned.",
+      "whatYouLose": "Nothing you created. The projects these folders belonged to are no longer at their recorded location. If you move such a project back, Xcode builds and indexes it from scratch the first time.",
+      "howItRegenerates": "Xcode recreates DerivedData automatically the next time it builds or indexes a project.",
+      "discovery": {
+        "inspector": "xcodeDerivedData"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/Xcode/DerivedData"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        },
+        {
+          "processNotRunning": [
+            "xcodebuild"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "xcode.derivedData.active",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Xcode build data for existing projects",
+      "explanation": "Intermediate build products, indexes and logs Xcode keeps in DerivedData for projects that still exist (or whose project could not be determined). Only folders not used in the last 14 days are offered, and none are selected unless you choose them.",
+      "whatYouLose": "Nothing you created; your source code and project settings are not affected. The next build of each project is a full, slower rebuild, and Xcode re-indexes the project (code completion and search are slower until indexing finishes).",
+      "howItRegenerates": "Xcode rebuilds and re-indexes the project the next time you open or build it.",
+      "discovery": {
+        "inspector": "xcodeDerivedData"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/Xcode/DerivedData"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        },
+        {
+          "processNotRunning": [
+            "xcodebuild"
+          ]
+        },
+        {
+          "olderThan": 14
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "xcode.archives.old",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Older Xcode archives",
+      "explanation": "Archived builds (.xcarchive) that Xcode's Organizer keeps after Product → Archive. For each app, the newest archives are always kept (3 by default, configurable in Settings); only older ones are offered. Archives whose information cannot be read are always kept.",
+      "whatYouLose": "dSYMs needed to symbolicate crash reports for these builds.",
+      "howItRegenerates": "Archives are not regenerated automatically. You can only recreate one by archiving the same source code again, and the new build will not match crash reports from the original build.",
+      "discovery": {
+        "inspector": "xcodeArchives"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/Xcode/Archives"
+      ],
+      "minDepthBelowRoot": 2,
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        }
+      ],
+      "action": "quarantine",
+      "retentionHours": 168
+    },
+    {
+      "id": "xcode.deviceSupport",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Xcode device support files",
+      "explanation": "Debug symbols Xcode copies from each iPhone, iPad, Apple Watch, Apple TV or Vision Pro OS version you have connected for debugging. Folders for versions older than the newest two per platform are highlighted; only folders not used in the last 30 days are offered.",
+      "whatYouLose": "Nothing you created. The next time you debug on a device running one of these OS versions, Xcode copies its symbols again, which can take several minutes and requires the device to be connected.",
+      "howItRegenerates": "Xcode recreates these files automatically when you connect a device running that OS version and start debugging.",
+      "discovery": {
+        "inspector": "xcodeDeviceSupport"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Developer/Xcode/iOS DeviceSupport",
+        "{HOME}/Library/Developer/Xcode/watchOS DeviceSupport",
+        "{HOME}/Library/Developer/Xcode/tvOS DeviceSupport",
+        "{HOME}/Library/Developer/Xcode/visionOS DeviceSupport"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        },
+        {
+          "olderThan": 30
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "xcode.xipDownloads",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Downloaded Xcode installers (.xip)",
+      "explanation": "Xcode installer archives (.xip) in your Downloads folder. Once Xcode has been expanded and installed, the archive is no longer needed. Only files not modified in the last 7 days and not currently open are offered.",
+      "whatYouLose": "The installer file itself. If you want to install that Xcode version again, you have to download it again (often many gigabytes, from the Apple Developer website).",
+      "howItRegenerates": "Not regenerated; download the installer again from the Apple Developer website if you need it.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Downloads/*.xip"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Downloads"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        },
+        {
+          "olderThan": 7
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "poetry.virtualenvs",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Poetry virtual environments",
+      "explanation": "Python virtual environments that Poetry creates for your projects. Only environments not used in the last 60 days are offered.",
+      "whatYouLose": "The installed packages of these environments. Projects that use them need `poetry install` (and an internet connection) before they run again.",
+      "howItRegenerates": "Poetry recreates a project's environment the next time you run `poetry install` or `poetry run` in that project.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/pypoetry/virtualenvs/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/pypoetry/virtualenvs"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "poetry"
+          ]
+        },
+        {
+          "olderThan": 60
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "cargo.registryCache",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Cargo downloaded crate archives",
+      "explanation": "Compressed .crate archives that Cargo downloads from crates.io and keeps so it does not need to download them again.",
+      "whatYouLose": "Nothing you created. The next build that needs these crates downloads them again, which needs an internet connection and takes time; offline builds of those projects will fail until then.",
+      "howItRegenerates": "Cargo downloads the crates again as your projects need them.",
+      "discovery": {
+        "glob": [
+          "{HOME}/.cargo/registry/cache/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/.cargo/registry/cache"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "cargo",
+            "rustc"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "gradle.caches",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Gradle caches",
+      "explanation": "Downloaded dependencies, build-script caches and transformed artifacts Gradle keeps for all your projects. iMop cannot tell a Gradle daemon apart from other Java programs, so this is only offered while no Java process is running (iMop never stops the daemon for you).",
+      "whatYouLose": "Nothing you created. The next build of each Gradle project downloads its dependencies again and runs slower; builds that work offline will fail until they have been online once.",
+      "howItRegenerates": "Gradle downloads and rebuilds what it needs during the next build.",
+      "discovery": {
+        "glob": [
+          "{HOME}/.gradle/caches/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/.gradle/caches"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "java",
+            "gradle"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "maven.repo",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Maven local repository",
+      "explanation": "Your local Maven repository: downloaded dependencies and plugins for all Maven projects. It can also contain artifacts you installed locally with `mvn install` that exist nowhere else.",
+      "whatYouLose": "Downloaded dependencies must be fetched again (internet connection required). Artifacts you installed locally with `mvn install` are lost until you build and install them again from their source.",
+      "howItRegenerates": "Maven downloads dependencies again during the next build; locally installed artifacts come back only when you run `mvn install` for them again.",
+      "discovery": {
+        "glob": [
+          "{HOME}/.m2/repository/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/.m2/repository"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "mvn",
+            "java"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "playwright.browsers",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Playwright browsers",
+      "explanation": "Browser builds (Chromium, Firefox, WebKit) that Playwright downloads to run browser tests.",
+      "whatYouLose": "Nothing you created. Your browser tests cannot run until the browsers are downloaded again (several hundred megabytes each).",
+      "howItRegenerates": "Run `npx playwright install` (or let your test setup do it) to download them again.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Caches/ms-playwright/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/ms-playwright"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "node"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "puppeteer.browsers",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Puppeteer browsers",
+      "explanation": "Chrome builds that Puppeteer downloads to automate a browser.",
+      "whatYouLose": "Nothing you created. Scripts and tests that use Puppeteer cannot run until the browser is downloaded again.",
+      "howItRegenerates": "Puppeteer downloads its browser again on the next install (`npm install`) or with `npx puppeteer browsers install`.",
+      "discovery": {
+        "glob": [
+          "{HOME}/.cache/puppeteer/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/.cache/puppeteer"
+      ],
+      "preconditions": [
+        {
+          "processNotRunning": [
+            "node"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "android.systemImages",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Android emulator system images",
+      "explanation": "Android system images the Android SDK downloaded for running emulators.",
+      "whatYouLose": "Nothing you created, but emulators (virtual devices) that use these images will not start until the images are downloaded again.",
+      "howItRegenerates": "Download the images again with Android Studio's SDK Manager (or `sdkmanager`).",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Android/sdk/system-images/*/*/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Android/sdk/system-images"
+      ],
+      "minDepthBelowRoot": 3,
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.google.android.studio"
+          ]
+        },
+        {
+          "processNotRunning": [
+            "emulator",
+            "qemu-system-aarch64",
+            "qemu-system-x86_64"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "vscode.oldExtensions",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Old VS Code extension versions",
+      "explanation": "Folders of VS Code extensions that have been replaced by a newer version of the same extension and are no longer referenced by VS Code's extension list. If the extension list cannot be read, nothing is offered.",
+      "whatYouLose": "Nothing you use: VS Code already uses the newer version. You could no longer switch back to these exact older versions without downloading them again.",
+      "howItRegenerates": "Not needed; if you install an older version on purpose, VS Code downloads it again.",
+      "discovery": {
+        "inspector": "vscodeOldExtensions"
+      },
+      "allowRoots": [
+        "{HOME}/.vscode/extensions"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.microsoft.VSCode"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "jetbrains.caches.orphanedVersion",
+      "category": "developer",
+      "tier": "green",
+      "title": "JetBrains caches for removed IDE versions",
+      "explanation": "Caches and indexes of JetBrains IDE versions (IntelliJ IDEA, PyCharm, WebStorm, …) that are no longer installed. Folders of unknown products, or whose installed version cannot be determined, are never treated as orphaned.",
+      "whatYouLose": "Nothing you created; settings are kept elsewhere and are not touched. If you reinstall that exact IDE version, it re-indexes your projects the first time.",
+      "howItRegenerates": "The IDE recreates its caches and indexes automatically when that version runs again.",
+      "discovery": {
+        "inspector": "jetbrainsCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/JetBrains"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.jetbrains.*",
+            "com.google.android.studio"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "jetbrains.caches.current",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "JetBrains caches for installed IDEs",
+      "explanation": "Caches and indexes of JetBrains IDEs that are installed (or whose installation could not be ruled out).",
+      "whatYouLose": "Nothing you created; settings are not touched. The IDE re-indexes your projects the next time it opens them, which can take a while and makes search and code completion slower until it finishes.",
+      "howItRegenerates": "The IDE rebuilds its caches and indexes automatically.",
+      "discovery": {
+        "inspector": "jetbrainsCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches/JetBrains"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.jetbrains.*",
+            "com.google.android.studio"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "apps.userCaches.unknownOwner",
+      "category": "apps",
+      "tier": "yellow",
+      "title": "Caches of unknown apps",
+      "explanation": "Folders in your Library's Caches folder that iMop cannot match to an installed app (often left behind by apps you removed, or created by command-line tools). Apple's own caches, protected locations and caches handled by other iMop categories are excluded. Only folders not used in the last 30 days and not currently open are offered.",
+      "whatYouLose": "Usually nothing you created, because apps keep caches only for speed. Because the owner is unknown, a tool may have kept downloaded content here that it will need to download again, or settle more slowly the first time it runs.",
+      "howItRegenerates": "Whatever program created the cache recreates it when it needs it again.",
+      "discovery": {
+        "inspector": "appUserCachesUnknownOwner"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Caches"
+      ],
+      "preconditions": [
+        "notOpenByAnyProcess",
+        {
+          "olderThan": 30
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "browser.chromium.serviceWorkerCache",
+      "category": "browsers",
+      "tier": "yellow",
+      "title": "Chrome, Edge, Brave, Arc and Vivaldi service worker caches",
+      "explanation": "Files that websites and web apps store through service workers (Service Worker/CacheStorage) in Chromium-based browsers. Only the CacheStorage folder is included; the service worker registrations, cookies, site storage and everything else in the profile are never touched.",
+      "whatYouLose": "Web apps that work offline (for example mail, documents or music web apps) lose their offline copies and must download them again; some may not work offline until you visit them while online.",
+      "howItRegenerates": "Websites store their offline files again the next time you visit them while online.",
+      "discovery": {
+        "inspector": "chromiumServiceWorkerCaches"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support"
+      ],
+      "minDepthBelowRoot": 4,
+      "preconditions": [
+        "owningAppNotRunning"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "adobe.mediaCache",
+      "category": "media",
+      "tier": "yellow",
+      "title": "Adobe media cache",
+      "explanation": "Conformed audio and indexed video files that Premiere Pro, After Effects, Audition and other Adobe video apps create so they can play your footage smoothly.",
+      "whatYouLose": "Nothing you created; your projects and original media are not affected. When you open a project again, the app re-processes its media, which can take a long time for large projects.",
+      "howItRegenerates": "Adobe apps rebuild the media cache automatically when you open projects that need it.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Library/Application Support/Adobe/Common/Media Cache Files/*",
+          "{HOME}/Library/Application Support/Adobe/Common/Media Cache/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support/Adobe/Common/Media Cache Files",
+        "{HOME}/Library/Application Support/Adobe/Common/Media Cache"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.adobe.*"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "lightroom.previews",
+      "category": "media",
+      "tier": "yellow",
+      "title": "Lightroom Classic previews",
+      "explanation": "The standard and 1:1 previews Lightroom Classic keeps next to each catalog (\"<catalog> Previews.lrdata\"). The catalog itself and Smart Previews are never touched, and catalogs inside protected folders such as Pictures or Documents are skipped.",
+      "whatYouLose": "Nothing you created; your photos, edits and catalog are not affected. Lightroom shows lower-quality thumbnails and is slower while browsing until it has rendered the previews again.",
+      "howItRegenerates": "Lightroom Classic renders previews again as you browse, or all at once with Library → Previews → Build Standard-Sized Previews.",
+      "discovery": {
+        "inspector": "lightroomPreviews"
+      },
+      "allowRoots": [
+        "{HOME}"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.adobe.LightroomClassicCC7"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "*.lrcat"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "ai.huggingface",
+      "category": "ai",
+      "tier": "yellow",
+      "title": "Hugging Face models and datasets",
+      "explanation": "Model and dataset repositories downloaded by Hugging Face libraries (transformers, diffusers, datasets, huggingface_hub) into the shared hub cache. Each repository folder is self-contained.",
+      "whatYouLose": "Programs that use these models or datasets must download them again, which can be many gigabytes and needs an internet connection; they will not work offline until then.",
+      "howItRegenerates": "Hugging Face libraries download a model or dataset again the next time a program asks for it.",
+      "discovery": {
+        "glob": [
+          "{HOME}/.cache/huggingface/hub/models--*",
+          "{HOME}/.cache/huggingface/hub/datasets--*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/.cache/huggingface/hub"
+      ],
+      "preconditions": [
+        "notOpenByAnyProcess",
+        {
+          "processNotRunning": [
+            "python",
+            "python3"
+          ]
+        }
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "ai.lmstudio",
+      "category": "ai",
+      "tier": "yellow",
+      "title": "LM Studio models",
+      "explanation": "Language models you downloaded in LM Studio.",
+      "whatYouLose": "The downloaded model files. To use a model again you must download it again in LM Studio, which can be many gigabytes.",
+      "howItRegenerates": "Not regenerated automatically; download the model again from LM Studio's model search.",
+      "discovery": {
+        "glob": [
+          "{HOME}/.lmstudio/models/*/*"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/.lmstudio/models"
+      ],
+      "minDepthBelowRoot": 2,
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "ai.elementlabs.lmstudio"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "project.nodeModules",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "node_modules in old projects",
+      "explanation": "Installed JavaScript packages (the topmost node_modules folder of a project; nested ones are never offered separately). Only projects in the folders you chose in Settings are scanned, only when the project has not been used for 90 days (judged by its manifest and git files), the folder is not tracked by git, and its rebuild manifest is next to it.",
+      "whatYouLose": "Nothing you wrote. The project will not run or build until you reinstall its packages, which needs an internet connection.",
+      "howItRegenerates": "Run your package manager's install command (npm install, yarn, pnpm install or bun install) in the project.",
+      "discovery": {
+        "inspector": "projectArtifacts"
+      },
+      "allowRoots": [
+        "{PROJECT_ROOTS}"
+      ],
+      "preconditions": [
+        {
+          "projectOlderThan": 90
+        },
+        "notTrackedByGit",
+        {
+          "processNotRunning": [
+            "node",
+            "npm",
+            "yarn",
+            "pnpm",
+            "bun"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "package-lock.json",
+            "yarn.lock",
+            "pnpm-lock.yaml",
+            "bun.lockb",
+            "bun.lock"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "project.rustTarget",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Rust build output in old projects",
+      "explanation": "Cargo's target folder with compiled build output. Only offered when Cargo.toml is next to it and the folder carries Cargo's own markers (CACHEDIR.TAG or .rustc_info.json). Only projects in the folders you chose in Settings are scanned, only when the project has not been used for 90 days (judged by its manifest and git files), the folder is not tracked by git, and its rebuild manifest is next to it.",
+      "whatYouLose": "Nothing you wrote. The next build compiles the project and all its dependencies from scratch, which can take a long time.",
+      "howItRegenerates": "Cargo rebuilds the target folder on the next `cargo build`, `cargo run` or `cargo test`.",
+      "discovery": {
+        "inspector": "projectArtifacts"
+      },
+      "allowRoots": [
+        "{PROJECT_ROOTS}"
+      ],
+      "preconditions": [
+        {
+          "projectOlderThan": 90
+        },
+        "notTrackedByGit",
+        {
+          "processNotRunning": [
+            "cargo",
+            "rustc"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "Cargo.toml"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "project.pythonVenv",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Python virtual environments in old projects",
+      "explanation": "A project's .venv or venv folder (a Python virtual environment with pyvenv.cfg), next to a pyproject.toml, requirements file, uv.lock or poetry.lock. Only projects in the folders you chose in Settings are scanned, only when the project has not been used for 90 days (judged by its manifest and git files), the folder is not tracked by git, and its rebuild manifest is next to it.",
+      "whatYouLose": "Packages installed in the environment. The project needs its dependencies reinstalled before it runs again; packages you installed by hand (not listed in the project's files) must be reinstalled by hand.",
+      "howItRegenerates": "Recreate the environment (for example `python3 -m venv .venv` then install the requirements, or `uv sync` / `poetry install`).",
+      "discovery": {
+        "inspector": "projectArtifacts"
+      },
+      "allowRoots": [
+        "{PROJECT_ROOTS}"
+      ],
+      "preconditions": [
+        {
+          "projectOlderThan": 90
+        },
+        "notTrackedByGit",
+        {
+          "processNotRunning": [
+            "python",
+            "python3"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "pyproject.toml",
+            "requirements*.txt",
+            "uv.lock",
+            "poetry.lock"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "project.pods",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "CocoaPods Pods folders in old projects",
+      "explanation": "A project's Pods folder with downloaded CocoaPods dependencies, next to Podfile.lock. Only projects in the folders you chose in Settings are scanned, only when the project has not been used for 90 days (judged by its manifest and git files), the folder is not tracked by git, and its rebuild manifest is next to it.",
+      "whatYouLose": "Nothing you wrote. The project will not build until you run `pod install` again, which needs an internet connection.",
+      "howItRegenerates": "Run `pod install` in the project.",
+      "discovery": {
+        "inspector": "projectArtifacts"
+      },
+      "allowRoots": [
+        "{PROJECT_ROOTS}"
+      ],
+      "preconditions": [
+        {
+          "projectOlderThan": 90
+        },
+        "notTrackedByGit",
+        {
+          "processNotRunning": [
+            "pod"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "Podfile.lock"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "project.nextBuild",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Next.js build output in old projects",
+      "explanation": "A project's .next folder with Next.js build output and cache, next to a next.config file. Only projects in the folders you chose in Settings are scanned, only when the project has not been used for 90 days (judged by its manifest and git files), the folder is not tracked by git, and its rebuild manifest is next to it.",
+      "whatYouLose": "Nothing you wrote. The next `next build` or `next dev` takes longer because it starts without a cache.",
+      "howItRegenerates": "Next.js recreates the folder on the next build or dev server start.",
+      "discovery": {
+        "inspector": "projectArtifacts"
+      },
+      "allowRoots": [
+        "{PROJECT_ROOTS}"
+      ],
+      "preconditions": [
+        {
+          "projectOlderThan": 90
+        },
+        "notTrackedByGit",
+        {
+          "processNotRunning": [
+            "node"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "next.config.*"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "project.gradleBuild",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Gradle build output in old projects",
+      "explanation": "A project's build folder, only when build.gradle or build.gradle.kts is next to it (a folder named build is never offered on its own). Only projects in the folders you chose in Settings are scanned, only when the project has not been used for 90 days (judged by its manifest and git files), the folder is not tracked by git, and its rebuild manifest is next to it.",
+      "whatYouLose": "Nothing you wrote. The next build compiles the project from scratch.",
+      "howItRegenerates": "Gradle recreates the build folder on the next build.",
+      "discovery": {
+        "inspector": "projectArtifacts"
+      },
+      "allowRoots": [
+        "{PROJECT_ROOTS}"
+      ],
+      "preconditions": [
+        {
+          "projectOlderThan": 90
+        },
+        "notTrackedByGit",
+        {
+          "processNotRunning": [
+            "java",
+            "gradle"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "build.gradle",
+            "build.gradle.kts"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
+    },
+    {
+      "id": "project.swiftBuild",
+      "category": "developer",
+      "tier": "yellow",
+      "title": "Swift package build output in old projects",
+      "explanation": "A Swift package's .build folder with compiled output and checked-out dependencies, next to Package.swift. Only projects in the folders you chose in Settings are scanned, only when the project has not been used for 90 days (judged by its manifest and git files), the folder is not tracked by git, and its rebuild manifest is next to it.",
+      "whatYouLose": "Nothing you wrote. The next build resolves the package's dependencies (internet connection needed) and compiles everything from scratch.",
+      "howItRegenerates": "Swift Package Manager recreates the folder on the next `swift build` or `swift test`.",
+      "discovery": {
+        "inspector": "projectArtifacts"
+      },
+      "allowRoots": [
+        "{PROJECT_ROOTS}"
+      ],
+      "preconditions": [
+        {
+          "projectOlderThan": 90
+        },
+        "notTrackedByGit",
+        {
+          "processNotRunning": [
+            "swift-build",
+            "swift-package"
+          ]
+        },
+        {
+          "manifestPresent": [
+            "Package.swift"
+          ]
+        },
+        "notOpenByAnyProcess"
+      ],
+      "action": "quarantine"
     }
   ]
 }

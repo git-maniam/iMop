@@ -62,6 +62,10 @@ public struct DenyList: Sendable {
         "Library/Application Support/MobileSync",
         "Library/Application Support/com.apple.TCC",
         "Library/Application Support/iMop",
+        // SAFETY-DECISION (review M2): iMop's own audit log folder (spec §5.5,
+        // {HOME}/Library/Logs/iMop/audit-YYYY-MM.jsonl). Written only by the audit-log module, never
+        // by a rule; `logs.user` additionally lists "iMop" in its excludedNames.
+        "Library/Logs/iMop",
         "Library/Group Containers/group.com.apple.*",
         // SAFETY-DECISION: beyond the spec's literal "group.com.apple.*", any Group Container whose
         // name contains "com.apple." is Apple-managed too ("<TeamID>.groups.com.apple.podcasts",

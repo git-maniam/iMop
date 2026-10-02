@@ -7,6 +7,145 @@ struct RuleCatalogTests {
     static func runAll() async {
         print("\n📜 Running RuleCatalog Tests (spec §4, §6)...")
 
+        // MARK: Milestone 4 — vendor-command rules
+
+        await TestSuite.run("RuleCatalog (M4): every vendor-command rule loads, is pinned, and uses only allow-listed commands") {
+            try await M1.withEnv { env in
+                let catalog = RuleCatalog.load(data: try M2.sourceRulesData(), environment: env.environment)
+                try TestSuite.assertEqual(catalog.disabled, [])
+                for (id, tier) in M2.m4CommandRuleTiers {
+                    guard let rule = catalog.rule(id: id) else { throw TestError("missing \(id)") }
+                    try TestSuite.assertEqual(rule.tier, tier, id)
+                    try TestSuite.assertNil(RuleTargetMatcher.commandRuleMismatch(rule), id)
+                    guard case .command(let spec) = rule.action else { throw TestError("\(id) must be a command rule") }
+                    try TestSuite.assertTrue(CommandAllowList.standard.actionEntries.contains { $0.matchesTemplate(tool: spec.tool, arguments: spec.arguments) },
+                                             "\(id): \(spec.arguments)")
+                    if let dryRun = spec.dryRunArguments {
+                        try TestSuite.assertTrue(CommandAllowList.matches(tool: spec.tool, arguments: dryRun, purpose: .readOnly), "\(id) dry run")
+                    }
+                    try TestSuite.assertFalse(rule.allowRoots.isEmpty, id)
+                    try TestSuite.assertTrue(rule.allowRoots.allSatisfy { $0.hasPrefix("{HOME}/") }, id)
+                }
+                // Spec tables: preconditions.
+                func pre(_ id: String) throws -> [Precondition] {
+                    guard let r = catalog.rule(id: id) else { throw TestError("missing \(id)") }
+                    return r.preconditions
+                }
+                for id in ["simulator.unavailable", "simulator.devices.stale", "simulator.runtimes"] {
+                    try TestSuite.assertTrue(try pre(id).contains(.simulatorIdle), id)
+                }
+                try TestSuite.assertTrue(try pre("simulator.devices.stale").contains(.olderThan(days: 90)))
+                for id in M2.m4CommandRuleIDs where id.hasPrefix("docker.") {
+                    try TestSuite.assertTrue(try pre(id).contains(.dockerDaemonReachable), id)
+                }
+                let processes: [String: [String]] = [
+                    "homebrew.cleanup": ["brew"], "npm.cache": ["npm", "node"], "yarn.cache": ["yarn"], "pnpm.store": ["pnpm"],
+                    "bun.cache": ["bun"], "uv.cache.prune": ["uv"], "uv.cache.clean": ["uv"], "go.buildCache": ["go"],
+                    "go.modCache": ["go"], "cocoapods.cache.command": ["pod"], "flutter.pubCache": ["dart", "flutter"],
+                ]
+                for (id, names) in processes {
+                    try TestSuite.assertTrue(try pre(id).contains(.processNotRunning(names)), "\(id): \(try pre(id))")
+                }
+                let avd = try pre("android.avd")
+                try TestSuite.assertTrue(avd.contains { if case .processNotRunning(let n) = $0 { return n.contains("emulator") && n.contains("qemu-system-aarch64") } else { return false } })
+                // Only simctl runtime delete gets the 30-minute timeout.
+                for id in M2.m4CommandRuleIDs {
+                    guard case .command(let spec) = catalog.rule(id: id)?.action else { continue }
+                    try TestSuite.assertEqual(spec.timeout, id == "simulator.runtimes" ? 1800 : 600, id)
+                }
+                // Red command: docker.volumes only.
+                let redCommands = catalog.rules.filter { if case .command = $0.action { return $0.tier == .red } else { return false } }
+                try TestSuite.assertEqual(redCommands.map(\.id), ["docker.volumes"])
+            }
+        }
+
+        await TestSuite.run("RuleCatalog (M4): forbidden commands are disabled — system prune, --volumes, autoremove, shells, paths, wrappers, rm -rf") {
+            try await M1.withEnv { env in
+                func commandRule(_ id: String, tier: String = "yellow", _ tool: String, _ arguments: [String],
+                                 dryRun: [String]? = nil, timeout: Int? = nil) -> [String: Any] {
+                    var spec: [String: Any] = ["tool": tool, "arguments": arguments, "idempotentSafe": true]
+                    if let dryRun { spec["dryRunArguments"] = dryRun }
+                    if let timeout { spec["timeoutSeconds"] = timeout }
+                    return M2.ruleJSON(id, overrides: ["tier": tier, "action": ["command": spec]])
+                }
+                let bad: [[String: Any]] = [
+                    commandRule("f.prune", "docker", ["system", "prune", "--volumes", "-f"]),
+                    commandRule("f.prune2", "docker", ["system", "prune", "-a", "-f"]),
+                    commandRule("f.prune3", "docker", ["system", "prune", "-f"]),
+                    commandRule("f.volumesFlag", "docker", ["volume", "prune", "--volumes"]),
+                    commandRule("f.autoremove", "brew", ["autoremove"]),
+                    commandRule("f.sh", "sh", ["-c", "brew cleanup"]),
+                    commandRule("f.zsh", "zsh", ["-c", "true"]),
+                    commandRule("f.binsh", "/bin/sh", ["-c", "true"]),
+                    commandRule("f.absTool", "/opt/homebrew/bin/brew", ["cleanup", "--prune=all"]),
+                    commandRule("f.relTool", "./brew", ["cleanup", "--prune=all"]),
+                    commandRule("f.pathArg", "brew", ["cleanup", "--prune=all", "/Users/x"]),
+                    commandRule("f.pathItem", "docker", ["volume", "rm", "/var/lib/docker/volumes/x"]),
+                    commandRule("f.sudo", "sudo", ["brew", "cleanup", "--prune=all"]),
+                    commandRule("f.env", "env", ["brew", "cleanup", "--prune=all"]),
+                    commandRule("f.nohup", "nohup", ["brew", "cleanup", "--prune=all"]),
+                    commandRule("f.xargs", "xargs", ["rm", "-rf"]),
+                    commandRule("f.rm", "rm", ["-rf", "{ITEM}"]),
+                    commandRule("f.rmViaBun", "bun", ["pm", "cache", "rm", "-rf"]),
+                    commandRule("f.simctlAll", "xcrun", ["simctl", "delete", "all"]),
+                    commandRule("f.twoItems", "xcrun", ["simctl", "delete", "{ITEM}", "{ITEM}"]),
+                    commandRule("f.ollamaRmAll", "ollama", ["rm", "-a"]),
+                    commandRule("f.greenModcache", tier: "green", "go", ["clean", "-modcache"]),
+                    commandRule("f.greenAvd", tier: "green", "avdmanager", ["delete", "avd", "-n", "{ITEM}"]),
+                    commandRule("f.longTimeout", "brew", ["cleanup", "--prune=all"], timeout: 3600),
+                    commandRule("f.runtimeTooLong", "xcrun", ["simctl", "runtime", "delete", "{ITEM}"], timeout: 1801),
+                    commandRule("f.dryRunAction", "brew", ["cleanup", "--prune=all"], dryRun: ["cleanup", "--prune=all"]),
+                    commandRule("f.probe", "xcode-select", ["-p"]),
+                ]
+                for json in bad {
+                    let catalog = RuleCatalog.load(data: try M2.catalogData([json]), environment: env.environment)
+                    try TestSuite.assertEqual(catalog.rules.count, 0, "\(json["id"] ?? "") must be disabled")
+                    try TestSuite.assertEqual(M2.disabledIDs(catalog), [json["id"] as? String ?? ""], "\(json["id"] ?? "")")
+                }
+                // A discovery command must be read-only and never per item.
+                var destructive = M2.ruleJSON("f.discovery", overrides: ["tier": "yellow"])
+                destructive["discovery"] = ["command": ["tool": "docker", "arguments": ["volume", "rm", "{ITEM}"], "idempotentSafe": true]]
+                try TestSuite.assertEqual(RuleCatalog.load(data: try M2.catalogData([destructive]), environment: env.environment).rules.count, 0)
+
+                // The M4 exact entries that replaced the blanket "rm" token load.
+                let good: [[String: Any]] = [
+                    commandRule("g.bun", tier: "green", "bun", ["pm", "cache", "rm"]),
+                    commandRule("g.ollama", "ollama", ["rm", "{ITEM}"]),
+                    commandRule("g.simctlUnavailable", tier: "green", "xcrun", ["simctl", "delete", "unavailable"]),
+                    commandRule("g.simctlItem", "xcrun", ["simctl", "delete", "{ITEM}"]),
+                    commandRule("g.runtime", "xcrun", ["simctl", "runtime", "delete", "{ITEM}"], timeout: 1800),
+                    commandRule("g.avd", "avdmanager", ["delete", "avd", "-n", "{ITEM}"]),
+                ]
+                let loaded = RuleCatalog.load(data: try M2.catalogData(good), environment: env.environment)
+                try TestSuite.assertEqual(Set(loaded.rules.map(\.id)), Set(good.compactMap { $0["id"] as? String }), "\(loaded.disabled)")
+            }
+        }
+
+        await TestSuite.run("RuleCatalog (M4): a Red command is allowed only for docker.volumes with docker volume rm {ITEM}") {
+            try await M1.withEnv { env in
+                func red(_ id: String, tier: String = "red", _ tool: String, _ arguments: [String]) -> [String: Any] {
+                    // docker.volumes pins dockerDaemonReachable (review M4).
+                    M2.ruleJSON(id, overrides: ["tier": tier, "preconditions": ["dockerDaemonReachable"],
+                                                "action": ["command": ["tool": tool, "arguments": arguments, "idempotentSafe": false]]])
+                }
+                let ok = RuleCatalog.load(data: try M2.catalogData([red("docker.volumes", "docker", ["volume", "rm", "{ITEM}"])]),
+                                          environment: env.environment)
+                try TestSuite.assertEqual(ok.rules.map(\.id), ["docker.volumes"], "\(ok.disabled)")
+                let refused: [[String: Any]] = [
+                    red("docker.other", "docker", ["volume", "rm", "{ITEM}"]),
+                    red("leftovers.launchAgents", "docker", ["volume", "rm", "{ITEM}"]),
+                    red("docker.volumes", tier: "yellow", "docker", ["volume", "rm", "{ITEM}"]),
+                    red("docker.volumes", tier: "green", "docker", ["volume", "rm", "{ITEM}"]),
+                    red("red.brew", "brew", ["cleanup", "--prune=all"]),
+                    red("docker.volumes", "docker", ["volume", "prune", "-f"]),
+                ]
+                for json in refused {
+                    let catalog = RuleCatalog.load(data: try M2.catalogData([json]), environment: env.environment)
+                    try TestSuite.assertEqual(catalog.rules.count, 0, "\(json["id"] ?? "") \(json["tier"] ?? "")")
+                }
+            }
+        }
+
         // MARK: Bundled catalog
 
         await TestSuite.run("RuleCatalog: bundled Rules.json loads via loadBundled with every rule valid") {
@@ -28,25 +167,39 @@ struct RuleCatalogTests {
             }
         }
 
-        await TestSuite.run("RuleCatalog: every bundled rule is Green, has user-facing texts and a safe action") {
+        await TestSuite.run("RuleCatalog: every bundled file rule is Green, command rules have their spec tier; texts and a safe action") {
             try await M1.withEnv { env in
                 let catalog = RuleCatalog.load(data: try M2.sourceRulesData(), environment: env.environment)
                 try TestSuite.assertFalse(catalog.rules.isEmpty)
                 for rule in catalog.rules {
-                    try TestSuite.assertEqual(rule.tier, .green, rule.id)
+                    try TestSuite.assertEqual(rule.tier, M2.m4CommandRuleTiers[rule.id] ?? M2.m5RuleTiers[rule.id] ?? .green, rule.id)
                     for (name, text) in [("title", rule.title), ("explanation", rule.explanation),
                                          ("whatYouLose", rule.whatYouLose), ("howItRegenerates", rule.howItRegenerates)] {
                         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         try TestSuite.assertTrue(trimmed.count >= 10, "\(rule.id).\(name) is too short: \"\(text)\"")
                     }
                     switch rule.action {
-                    case .quarantine: break
-                    case .command(let spec): try TestSuite.assertTrue(spec.idempotentSafe, rule.id)
-                    default: throw TestError("\(rule.id): Green rule with action \(rule.action)")
+                    case .quarantine:
+                        try TestSuite.assertFalse(M2.m4CommandRuleIDs.contains(rule.id), rule.id)
+                    case .command(let spec):
+                        try TestSuite.assertTrue(M2.m4CommandRuleIDs.contains(rule.id), rule.id)
+                        if rule.tier == .green { try TestSuite.assertTrue(spec.idempotentSafe, rule.id) }
+                        // Spec §5.3: command actions are not restorable, and the rule text says so.
+                        try TestSuite.assertTrue(rule.whatYouLose.contains("cannot be undone"), "\(rule.id): \(rule.whatYouLose)")
+                        try TestSuite.assertTrue(rule.whatYouLose.contains("nothing can be restored"), rule.id)
+                    default: throw TestError("\(rule.id): unexpected action \(rule.action)")
                     }
                     try TestSuite.assertTrue(rule.minDepthBelowRoot >= 1, rule.id)
                     for root in rule.allowRoots {
-                        try TestSuite.assertTrue(root.hasPrefix("{HOME}/"), "\(rule.id): \(root)")
+                        // M5: ProjectScanner rules use the dynamic {PROJECT_ROOTS} token; only
+                        // lightroom.previews (pinned to its inspector) may use {HOME} itself.
+                        if rule.id.hasPrefix("project.") {
+                            try TestSuite.assertEqual(rule.allowRoots, [Rule.projectRootsToken], rule.id)
+                        } else if rule.id == "lightroom.previews" {
+                            try TestSuite.assertEqual(rule.allowRoots, ["{HOME}"], rule.id)
+                        } else {
+                            try TestSuite.assertTrue(root.hasPrefix("{HOME}/"), "\(rule.id): \(root)")
+                        }
                     }
                     if case .glob(let patterns) = rule.discovery {
                         for raw in patterns {
@@ -235,7 +388,8 @@ struct RuleCatalogTests {
                     ("bad.duplicate", M2.ruleJSON("bad.duplicate")),
                 ]
                 let good = [M2.ruleJSON("good.first"), M2.ruleJSON("good.second", overrides: ["tier": "yellow", "action": "trash"]),
-                            M2.ruleJSON("good.yellowCommand", overrides: yellowCommand("docker", ["system", "df"]))]
+                            M2.ruleJSON("good.yellowCommand", overrides: yellowCommand("docker", ["image", "prune", "-a", "-f"],
+                                                                                         dryRun: ["system", "df"]))]
 
                 var all: [[String: Any]] = [good[0]]
                 all += bad.map(\.1)
@@ -289,14 +443,17 @@ struct RuleCatalogTests {
 
         await TestSuite.run("RuleCatalog: Swift-coded non-home exceptions apply only to their own rule ids") {
             try await M1.withEnv { env in
-                let advisoryish: [String: Any] = ["tier": "yellow", "action": "trash"]
-                var core = M2.ruleJSON("system.coreDumps", overrides: advisoryish)
-                core["allowRoots"] = ["/cores"]; core["discovery"] = ["glob": ["/cores/core.*"]]
-                var other = M2.ruleJSON("other.coreDumps", overrides: advisoryish)
-                other["allowRoots"] = ["/cores"]; other["discovery"] = ["glob": ["/cores/core.*"]]
-                let catalog = RuleCatalog.load(data: try M2.catalogData([core, other]), environment: env.environment)
-                try TestSuite.assertEqual(catalog.rules.map(\.id), ["system.coreDumps"], "\(catalog.disabled)")
-                try TestSuite.assertEqual(M2.disabledIDs(catalog), ["other.coreDumps"])
+                // Review M2: the exception id must also have its complete Swift-pinned shape.
+                let pinned: [String: Any] = [
+                    "tier": "yellow", "action": "trash", "allowRoots": ["/Applications"],
+                    "discovery": ["glob": ["/Applications/Install macOS *.app"]],
+                    "preconditions": ["appleSigned", ["appNotRunning": ["com.apple.InstallAssistant.*"]]],
+                ]
+                let installers = M2.ruleJSON("installers.macOS", overrides: pinned)
+                let other = M2.ruleJSON("other.installers", overrides: pinned)
+                let catalog = RuleCatalog.load(data: try M2.catalogData([installers, other]), environment: env.environment)
+                try TestSuite.assertEqual(catalog.rules.map(\.id), ["installers.macOS"], "\(catalog.disabled)")
+                try TestSuite.assertEqual(M2.disabledIDs(catalog), ["other.installers"])
             }
         }
     }

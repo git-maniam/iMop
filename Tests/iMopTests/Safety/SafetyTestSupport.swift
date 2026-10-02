@@ -17,15 +17,31 @@ enum M1 {
         maxBytes: Int64? = nil,
         maxItems: Int? = nil,
         allowSymlinkTarget: Bool = false,
-        discovery: Discovery = .glob(["{HOME}/Library/Caches/*"])
+        discovery: Discovery? = nil
     ) -> Rule {
         Rule(
             id: id, category: .apps, tier: tier, title: "Test rule \(id)",
             explanation: "test", whatYouLose: "nothing", howItRegenerates: "automatically",
-            discovery: discovery, allowRoots: allowRoots, minDepthBelowRoot: minDepth,
+            discovery: discovery ?? derivedGlobs(allowRoots: allowRoots, minDepth: minDepth),
+            allowRoots: allowRoots, minDepthBelowRoot: minDepth,
             preconditions: preconditions, action: action, maxExpectedBytes: maxBytes,
             maxExpectedItems: maxItems, allowSymlinkTarget: allowSymlinkTarget
         )
+    }
+
+    /// Since review M2, SafetyGate check 11b requires a target to match one of the rule's glob
+    /// patterns. The M1 suites test the other checks at many depths, so their default rule matches
+    /// every item from `minDepth` to `minDepth + 7` levels below each allow-root.
+    static func derivedGlobs(allowRoots: [String], minDepth: Int) -> Discovery {
+        var patterns: [String] = []
+        let first = max(1, minDepth)
+        for root in allowRoots {
+            let base = root.hasSuffix("/") ? String(root.dropLast()) : root
+            for depth in first...(first + 7) {
+                patterns.append(base + String(repeating: "/*", count: depth))
+            }
+        }
+        return .glob(patterns)
     }
 
     /// Creates a fresh fixture tree + fake environment, runs `body`, and always removes the tree.

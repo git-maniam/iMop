@@ -108,13 +108,36 @@ public struct CommandResult: Sendable, Equatable {
     public var succeeded: Bool { exitCode == 0 && !timedOut }
 }
 
+/// Why a vendor command is being run. The live runner only accepts an invocation that exactly
+/// matches an entry of `CommandAllowList` for this purpose.
+public enum CommandPurpose: String, Sendable, Hashable, CaseIterable {
+    /// Dry runs, discovery listings and precondition probes (Discovery/, Safety/).
+    case readOnly
+    /// A cleanup action (Executor only).
+    case action
+}
+
 /// Runs a resolved, trusted executable with an argument array (never a shell string).
 /// Read-only callers (preconditions, dry-run sizing) use this too; the implementation is
 /// `CommandRunner` in Execution/.
 public protocol CommandRunning: Sendable {
     /// Resolves `tool` (e.g. "xcrun", "brew") against the trusted directory list. `nil` if untrusted/missing.
     func resolveExecutable(_ tool: String) -> String?
+    /// Legacy form; means `purpose: .readOnly` (see the default implementation below).
     func run(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult
+    func run(executable: String, arguments: [String], timeout: TimeInterval, purpose: CommandPurpose) async -> CommandResult
+}
+
+extension CommandRunning {
+    /// SAFETY-DECISION: the purpose-less call is always a READ-ONLY request; only an explicit
+    /// `.action` may ever run a cleanup command.
+    public func run(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult {
+        await run(executable: executable, arguments: arguments, timeout: timeout, purpose: .readOnly)
+    }
+    // SAFETY-DECISION (M4): there is deliberately NO default for the purpose-taking `run`. Every
+    // conformer must implement it and so decide what to do with `.action`; a default that silently
+    // dropped the purpose would let an action reach a runner that only meant to serve read-only
+    // queries (and two defaults calling each other would recurse forever).
 }
 
 /// Code-signature verification (`SecStaticCodeCheckValidity` against a requirement).
@@ -123,12 +146,39 @@ public protocol CodeSignatureVerifying: Sendable {
     /// `false` when it is unsigned, invalid or not Apple's; `nil` when it could not be evaluated.
     /// Callers treat `nil` like `false` (fail closed).
     func isAppleSigned(path: String) -> Bool?
+    /// Signing information of the code at `path` (`SecCodeCopySigningInformation` with
+    /// `kSecCSSigningInformation`): its Team ID (`nil` when unsigned, ad-hoc signed or platform code)
+    /// and the `com.apple.security.application-groups` it declares (empty when none). `nil` when the
+    /// information could not be read or parsed. Used by the OrphanDetector (spec §6.9 condition 5),
+    /// where `nil` for ANY installed app means no Group Container is orphaned (fail closed).
+    func signingInfo(path: String) -> (teamID: String?, appGroups: [String])?
+}
+
+extension CodeSignatureVerifying {
+    /// SAFETY-DECISION (M6): a verifier that does not implement `signingInfo` can never read anything
+    /// ("could not evaluate"), so Group Containers are never classified as orphaned through it.
+    public func signingInfo(path: String) -> (teamID: String?, appGroups: [String])? { nil }
 }
 
 /// Verifier that can never vouch for anything: every query is "could not evaluate".
 public struct UnavailableCodeSignatureVerifier: CodeSignatureVerifying {
     public init() {}
     public func isAppleSigned(path: String) -> Bool? { nil }
+    public func signingInfo(path: String) -> (teamID: String?, appGroups: [String])? { nil }
+}
+
+/// Optional Spotlight file search (used by `lightroom.previews` to find `.lrcat` catalogs).
+public protocol SpotlightSearching: Sendable {
+    /// Paths of items whose file name ends in `.<ext>`, limited to `roots` when given (all
+    /// indexed volumes when `nil`). `nil` on error, timeout or when Spotlight is unavailable.
+    /// Callers must re-validate every returned path; Spotlight results are hints, not facts.
+    func paths(withExtension ext: String, under roots: [String]?) -> [String]?
+}
+
+/// Spotlight that can never answer: every query is "could not evaluate" (`nil`).
+public struct UnavailableSpotlightSearch: SpotlightSearching {
+    public init() {}
+    public func paths(withExtension ext: String, under roots: [String]?) -> [String]? { nil }
 }
 
 public protocol Clock: Sendable {
@@ -157,6 +207,10 @@ public struct SafeCleanEnvironment: Sendable {
     public let clock: any Clock
     public let effectiveUserID: UInt32
     public let userID: UInt32
+    /// User settings (project roots, archives to keep, overrides, exclusions …).
+    public var scanSettings: ScanSettings
+    /// Spotlight file search; unavailable (always `nil`) unless injected.
+    public var spotlight: any SpotlightSearching
 
     public init(
         homeDirectory: URL,
@@ -172,7 +226,11 @@ public struct SafeCleanEnvironment: Sendable {
         // SAFETY-DECISION: the default verifier answers `nil` ("cannot evaluate") for every path, so an
         // environment built without an explicit verifier makes `appleSigned` fail closed. The default
         // exists only so environments created before this member was added keep compiling.
-        codeSignatures: any CodeSignatureVerifying = UnavailableCodeSignatureVerifier()
+        codeSignatures: any CodeSignatureVerifying = UnavailableCodeSignatureVerifier(),
+        // SAFETY-DECISION: the defaults configure NO project roots and an unavailable Spotlight, so an
+        // environment built without them discovers nothing through those features.
+        scanSettings: ScanSettings = .default,
+        spotlight: any SpotlightSearching = UnavailableSpotlightSearch()
     ) {
         self.homeDirectory = homeDirectory
         self.fileSystem = fileSystem
@@ -185,10 +243,34 @@ public struct SafeCleanEnvironment: Sendable {
         self.clock = clock
         self.effectiveUserID = effectiveUserID
         self.userID = userID
+        self.scanSettings = scanSettings
+        self.spotlight = spotlight
     }
 
-    /// Home directory path as a plain string with no trailing slash.
-    public var homePath: String { homeDirectory.standardizedFileURL.path }
+    /// A copy of this environment with different settings.
+    public func with(scanSettings: ScanSettings) -> SafeCleanEnvironment {
+        var copy = self
+        copy.scanSettings = scanSettings
+        return copy
+    }
+
+    /// A copy of this environment with a different Spotlight implementation.
+    public func with(spotlight: any SpotlightSearching) -> SafeCleanEnvironment {
+        var copy = self
+        copy.spotlight = spotlight
+        return copy
+    }
+
+    /// Home directory path as a plain string with no trailing slash, in the same `/private/...`
+    /// form the canonicalizer produces for `/var`, `/tmp` and `/etc` (so every module agrees on
+    /// one spelling of the home).
+    public var homePath: String {
+        let path = homeDirectory.standardizedFileURL.path
+        for alias in ["/var", "/tmp", "/etc"] where path == alias || path.hasPrefix(alias + "/") {
+            return "/private" + path
+        }
+        return path
+    }
 }
 
 // MARK: - Test-suite guard

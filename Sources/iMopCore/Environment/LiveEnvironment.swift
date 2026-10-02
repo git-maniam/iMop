@@ -9,7 +9,8 @@ import Security
 /// Builds the production `SafeCleanEnvironment`. Every service here is read-only: nothing in this
 /// file mutates the file system.
 public enum LiveEnvironment {
-    public static func make() -> SafeCleanEnvironment {
+    /// - Parameter scanSettings: the user's settings (project roots, archives to keep, …).
+    public static func make(scanSettings: ScanSettings = .default) -> SafeCleanEnvironment {
         SafeCleanEnvironment(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
             fileSystem: LiveFileSystemProbe(),
@@ -17,13 +18,15 @@ public enum LiveEnvironment {
             runningApplications: LiveRunningApplications(),
             applications: LiveApplicationLocator(),
             volumes: LiveVolumeInspector(),
-            // SAFETY-DECISION (Milestone 1): no vendor command can run yet, so every command-based
-            // precondition (simulatorIdle, dockerDaemonReachable, notMounted, notSelectedXcode) fails closed.
-            commands: DisabledCommandRunner(),
+            // Milestone 4: the real runner. It resolves executables only from trusted directories and
+            // runs only allow-listed (tool, arguments) pairs, without a shell (Execution/CommandRunner).
+            commands: CommandRunner(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
             clock: SystemClock(),
             effectiveUserID: geteuid(),
             userID: getuid(),
-            codeSignatures: LiveCodeSignatureVerifier()
+            codeSignatures: LiveCodeSignatureVerifier(),
+            scanSettings: scanSettings,
+            spotlight: LiveSpotlightSearch()
         )
     }
 }
@@ -520,7 +523,7 @@ public struct LiveApplicationLocator: ApplicationLocating {
         Self.spotlightQueue.async {
             defer { done.signal() }
             guard !box.isAbandoned else { return }
-            box.finish(Self.runSpotlightQuery(queryString, shouldContinue: { !box.isAbandoned }))
+            box.finish(Self.runSpotlightQuery(queryString, scopes: nil, shouldContinue: { !box.isAbandoned }))
         }
         guard done.wait(timeout: .now() + spotlightTimeout) == .success else {
             box.abandon()
@@ -541,20 +544,31 @@ public struct LiveApplicationLocator: ApplicationLocating {
         return "kMDItemCFBundleIdentifier == \"\(bundleID)\"c"
     }
 
-    /// Serializes every Spotlight lookup.
-    private static let spotlightQueue = DispatchQueue(label: "iMop.LiveApplicationLocator.spotlight", qos: .utility)
+    /// Serializes every Spotlight lookup (application lookups and `LiveSpotlightSearch` file searches).
+    static let spotlightQueue = DispatchQueue(label: "iMop.LiveApplicationLocator.spotlight", qos: .utility)
+
+    /// SAFETY-DECISION: a query never yields more than this many paths (bounded memory); a query that
+    /// would yield more is answered with the first `maximumSpotlightResults`.
+    static let maximumSpotlightResults = 10_000
 
     /// Runs one synchronous query entirely on the calling thread. nil on any failure.
-    private static func runSpotlightQuery(_ queryString: String, shouldContinue: () -> Bool) -> [String]? {
+    /// - Parameter scopes: absolute directory paths to search, or nil for the whole computer + network.
+    static func runSpotlightQuery(_ queryString: String, scopes searchPaths: [String]?, shouldContinue: () -> Bool) -> [String]? {
         guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else { return nil }
-        let scopes = [kMDQueryScopeComputer as String, kMDQueryScopeNetwork as String] as CFArray
+        let scopes: CFArray
+        if let searchPaths {
+            guard !searchPaths.isEmpty else { return nil }
+            scopes = searchPaths as CFArray
+        } else {
+            scopes = [kMDQueryScopeComputer as String, kMDQueryScopeNetwork as String] as CFArray
+        }
         MDQuerySetSearchScope(query, scopes, 0)
         guard MDQueryExecute(query, CFOptionFlags(kMDQuerySynchronous.rawValue)) else { return nil }
         MDQueryDisableUpdates(query)
         defer { MDQueryStop(query) }
         guard shouldContinue() else { return nil }
         var paths: [String] = []
-        let count = MDQueryGetResultCount(query)
+        let count = min(MDQueryGetResultCount(query), maximumSpotlightResults)
         for index in 0..<count {
             guard let raw = MDQueryGetResultAtIndex(query, index) else { continue }
             let item = Unmanaged<MDItem>.fromOpaque(raw).takeUnretainedValue()
@@ -568,6 +582,60 @@ public struct LiveApplicationLocator: ApplicationLocating {
         return id.unicodeScalars.allSatisfy { scalar in
             (scalar.value < 128) && (CharacterSet.alphanumerics.contains(scalar) || scalar == "." || scalar == "-" || scalar == "_")
         }
+    }
+}
+
+/// Spotlight file search by extension (spec §6.7 `lightroom.previews`). Read-only.
+///
+/// Uses the same serial queue and abandon-on-timeout hand-off as `LiveApplicationLocator`: every
+/// MDQuery call happens on one serial queue inside one work item; on timeout the caller flags the
+/// request as abandoned and answers nil (fail closed).
+public struct LiveSpotlightSearch: SpotlightSearching {
+    public let timeout: TimeInterval
+
+    public init(timeout: TimeInterval = 15) {
+        self.timeout = timeout
+    }
+
+    public func paths(withExtension ext: String, under roots: [String]?) -> [String]? {
+        guard let queryString = Self.queryString(forExtension: ext) else { return nil }
+        var requestedScopes: [String]?
+        if let roots {
+            // SAFETY-DECISION: only absolute paths without ".." or NUL are passed to Spotlight as scopes;
+            // anything else makes the whole query unanswerable (nil).
+            for root in roots {
+                guard root.hasPrefix("/"), !root.contains("\0"),
+                      !root.split(separator: "/").contains("..") else { return nil }
+                RealHomeGuard.check(root)
+            }
+            guard !roots.isEmpty else { return nil }
+            requestedScopes = roots
+        }
+        let scopes = requestedScopes
+        let box = SpotlightRequest()
+        let done = DispatchSemaphore(value: 0)
+        LiveApplicationLocator.spotlightQueue.async {
+            defer { done.signal() }
+            guard !box.isAbandoned else { return }
+            box.finish(LiveApplicationLocator.runSpotlightQuery(queryString, scopes: scopes,
+                                                                shouldContinue: { !box.isAbandoned }))
+        }
+        guard done.wait(timeout: .now() + timeout) == .success else {
+            box.abandon()
+            return nil
+        }
+        return box.paths
+    }
+
+    /// `kMDItemFSName == "*.<ext>"c`, or nil for an extension that is not 1–16 ASCII letters/digits.
+    ///
+    /// SAFETY-DECISION: the extension can never alter the query syntax (no quotes, wildcards,
+    /// backslashes or spaces reach the query).
+    @_spi(FixtureTesting)
+    public static func queryString(forExtension ext: String) -> String? {
+        guard !ext.isEmpty, ext.count <= 16,
+              ext.unicodeScalars.allSatisfy({ $0.isASCII && CharacterSet.alphanumerics.contains($0) }) else { return nil }
+        return "kMDItemFSName == \"*.\(ext)\"c"
     }
 }
 
@@ -655,18 +723,64 @@ public struct LiveCodeSignatureVerifier: CodeSignatureVerifying {
             return nil
         }
     }
+
+    /// Entitlement holding the App Groups an app may use (spec §6.9 condition 5).
+    static let applicationGroupsEntitlement = "com.apple.security.application-groups"
+
+    /// Team ID and declared App Groups of the code at `path`. Read-only (`SecStaticCodeCreateWithPath`
+    /// + `SecCodeCopySigningInformation`); the signature is NOT validated here, only read.
+    ///
+    /// SAFETY-DECISION: anything unexpected (non-absolute path, Security framework error, an
+    /// entitlements value of the wrong type, entitlements present only as raw data) is `nil`, which
+    /// the OrphanDetector treats as "cannot evaluate" (no Group Container is orphaned).
+    public func signingInfo(path: String) -> (teamID: String?, appGroups: [String])? {
+        RealHomeGuard.check(path)
+        guard path.hasPrefix("/"), !path.contains("\0") else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &staticCode) == errSecSuccess,
+              let code = staticCode else { return nil }
+        var rawInfo: CFDictionary?
+        // Requirement information is requested too: on some releases the entitlements dictionary is
+        // only reported with it.
+        let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
+        guard SecCodeCopySigningInformation(code, flags, &rawInfo) == errSecSuccess,
+              let info = rawInfo as? [String: Any] else { return nil }
+
+        var teamID: String?
+        if let rawTeam = info[kSecCodeInfoTeamIdentifier as String] {
+            guard let team = rawTeam as? String else { return nil }
+            teamID = team.isEmpty ? nil : team
+        }
+
+        var groups: [String] = []
+        if let rawEntitlements = info[kSecCodeInfoEntitlementsDict as String] {
+            guard let entitlements = rawEntitlements as? [String: Any] else { return nil }
+            if let rawGroups = entitlements[Self.applicationGroupsEntitlement] {
+                guard let list = rawGroups as? [String] else { return nil }
+                groups = list
+            }
+        } else if info[kSecCodeInfoEntitlements as String] != nil {
+            // Entitlements exist but were not decoded for us: they cannot be inspected.
+            return nil
+        }
+        return (teamID, groups)
+    }
 }
 
-// MARK: - Commands (Milestone 1 placeholder)
+// MARK: - Commands (disabled runner)
 
-/// Milestone 1 placeholder: no executable resolves and nothing ever runs, so command-based
-/// preconditions fail closed. Replaced by `CommandRunner` in Milestone 4.
+/// A runner that never resolves or runs anything, so every command-based precondition fails closed.
+/// Was the Milestone 1 placeholder; the live environment uses `CommandRunner` since Milestone 4.
 public struct DisabledCommandRunner: CommandRunning {
     public init() {}
 
     public func resolveExecutable(_ tool: String) -> String? { nil }
 
     public func run(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult {
+        CommandResult(exitCode: -1, stdout: "", stderr: "command execution is disabled in this build")
+    }
+
+    public func run(executable: String, arguments: [String], timeout: TimeInterval, purpose: CommandPurpose) async -> CommandResult {
         CommandResult(exitCode: -1, stdout: "", stderr: "command execution is disabled in this build")
     }
 }

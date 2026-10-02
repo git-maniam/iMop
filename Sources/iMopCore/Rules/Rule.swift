@@ -84,9 +84,13 @@ public enum InspectorID: String, Codable, Sendable, CaseIterable {
     case orphanedAppData
     case orphanedLaunchAgents
     case appUserCaches
+    /// Folders directly in `{HOME}/Library/Caches` not resolvable to an installed app (Yellow).
+    case appUserCachesUnknownOwner
     case appContainerCaches
     case electronCaches
     case chromiumCaches
+    /// `<profile>/Service Worker/CacheStorage` of the Chromium browsers (Yellow).
+    case chromiumServiceWorkerCaches
     case vscodeOldExtensions
     case jetbrainsCaches
     case jetbrainsConfig
@@ -158,11 +162,18 @@ public enum Action: Sendable, Hashable {
     // rules allowed to use this action. It is never offered while Settings → "Always quarantine"
     // is ON (the default) and always requires an explicit per-run confirmation.
     case permanentDelete
+    /// Milestone 6, `leftovers.launchAgents` ONLY (pinned by `RuleCatalog.bootoutAndTrashRuleIDs`):
+    /// `/bin/launchctl bootout gui/<uid> <plist>` (allow-listed, validated), then the plist is moved
+    /// to the Finder Trash. A bootout failure other than "not loaded" leaves the plist untouched.
+    case bootoutAndTrash
 
+    // SAFETY-DECISION (M6): `bootoutAndTrash` counts as NOT restorable. The plist can be put back
+    // from the Trash, but the bootout (unloading the agent) is not undone by that; the user has to
+    // acknowledge the irreversible part explicitly.
     public var isRestorable: Bool {
         switch self {
         case .quarantine, .trash: return true
-        case .command, .permanentDelete, .advisory: return false
+        case .command, .permanentDelete, .advisory, .bootoutAndTrash: return false
         }
     }
 }
@@ -184,6 +195,18 @@ public enum Precondition: Sendable, Hashable {
     case appleSigned
     case notSelectedXcode
     case uploadedToCloud
+    /// ProjectScanner: the project (the artifact's parent directory) was last used more than N
+    /// days ago, measured as the max `lstat` mtime of every manifest file beside the artifact,
+    /// `.git/index` and `.git/HEAD`. Fails closed when none of them can be read.
+    case projectOlderThan(days: Int)
+    /// ProjectScanner: if `<project>/.git` exists, `git ls-files --error-unmatch` must report the
+    /// artifact as untracked. Any git error counts as "tracked" (fail closed).
+    case notTrackedByGit
+    /// OrphanDetector (spec §6.9, Milestone 6): re-evaluated at execute time for the target's
+    /// `owningBundleID` — no app registered with LaunchServices or found by Spotlight (condition 2), no
+    /// related running app or process (3) and no package receipt referencing it (4). Every error,
+    /// timeout or unknown answer counts as "not orphaned" (fail closed).
+    case stillOrphaned
 
     public var name: String {
         switch self {
@@ -201,6 +224,9 @@ public enum Precondition: Sendable, Hashable {
         case .appleSigned: return "appleSigned"
         case .notSelectedXcode: return "notSelectedXcode"
         case .uploadedToCloud: return "uploadedToCloud"
+        case .projectOlderThan: return "projectOlderThan"
+        case .notTrackedByGit: return "notTrackedByGit"
+        case .stillOrphaned: return "stillOrphaned"
         }
     }
 }
@@ -300,8 +326,124 @@ public struct Rule: Sendable, Identifiable, Hashable {
     /// Quarantine retention: rule override, else 24 h for Green and 7 days for everything else.
     public var effectiveRetentionHours: Int { retentionHours ?? (tier == .green ? 24 : 24 * 7) }
 
-    /// Expands `{HOME}` in every allow-root.
+    /// A copy of this rule whose quarantine retention is `hours`, or `nil` when `hours` would SHORTEN
+    /// the rule's own retention (or is not positive).
+    ///
+    /// SAFETY-DECISION (M6): used only by the Executor to hand the CONFIRMED (hashed) retention of a
+    /// plan item to the Quarantine, which checks the planned value against the rule it is given. A
+    /// user override (`ScanSettings.quarantineRetentionOverrideHours`) may only lengthen retention.
+    func withLengthenedRetention(hours: Int) -> Rule? {
+        guard hours > 0, hours >= effectiveRetentionHours else { return nil }
+        if hours == effectiveRetentionHours { return self }
+        return Rule(id: id, version: version, category: category, tier: tier, title: title, explanation: explanation,
+                    whatYouLose: whatYouLose, howItRegenerates: howItRegenerates, discovery: discovery,
+                    allowRoots: allowRoots, minDepthBelowRoot: minDepthBelowRoot, preconditions: preconditions,
+                    action: action, retentionHours: hours, maxExpectedBytes: maxExpectedBytes,
+                    maxExpectedItems: maxExpectedItems, allowSymlinkTarget: allowSymlinkTarget,
+                    excludedNames: excludedNames, requiresFullDiskAccess: requiresFullDiskAccess,
+                    ownerInference: ownerInference)
+    }
+
+    /// Expands `{HOME}` in every allow-root. `{PROJECT_ROOTS}` is NOT expanded here (it needs the
+    /// user's settings; see `resolvedAllowRoots(environment:)`) and stays an unusable relative string.
     public func resolvedAllowRoots(home: String) -> [String] {
         allowRoots.map { $0.replacingOccurrences(of: "{HOME}", with: home) }
+    }
+
+    /// Allow-root token standing for the user-selected ProjectScanner roots (spec §6.5).
+    public static let projectRootsToken = "{PROJECT_ROOTS}"
+
+    /// `true` when the rule's allow-roots are the dynamic project roots.
+    public var usesProjectRoots: Bool { allowRoots.contains(Self.projectRootsToken) }
+
+    /// Expands `{HOME}` and `{PROJECT_ROOTS}` (to the validated, canonical project roots from
+    /// `environment.scanSettings`; see `ProjectRoots.resolve`).
+    ///
+    /// SAFETY-DECISION: `{PROJECT_ROOTS}` expands only to roots that pass every check in
+    /// `ProjectRoots.resolve`; with none configured it expands to nothing (the rule has no usable
+    /// allow-root, so SafetyGate check 4 rejects every target and the Scanner offers nothing).
+    public func resolvedAllowRoots(environment: SafeCleanEnvironment) -> [String] {
+        resolvedAllowRoots(environment: environment, waivedSystemRoots: [])
+    }
+
+    /// `waivedSystemRoots`: test-only, see `DenyList.init(homeDirectory:waivedSystemRoots:)`.
+    func resolvedAllowRoots(environment: SafeCleanEnvironment, waivedSystemRoots: [String]) -> [String] {
+        var resolved: [String] = []
+        for raw in allowRoots {
+            if raw == Self.projectRootsToken {
+                for root in ProjectRoots.resolve(environment: environment, waivedSystemRoots: waivedSystemRoots)
+                where !resolved.contains(root.path) {
+                    resolved.append(root.path)
+                }
+            } else {
+                resolved.append(raw.replacingOccurrences(of: "{HOME}", with: environment.homePath))
+            }
+        }
+        return resolved
+    }
+}
+
+/// The user-selected ProjectScanner roots (spec §6.5), validated.
+public enum ProjectRoots {
+    /// Every configured root (`environment.scanSettings.projectRoots`) that is usable, canonical and
+    /// de-duplicated, in settings order.
+    ///
+    /// SAFETY-DECISION: a root is usable only when ALL of these hold; any other root is ignored:
+    /// - it passes the §3.4 text rules (`~`/`{HOME}` expanded from the environment, no `..`);
+    /// - it resolves through the file system to exactly its lexical spelling (no symlink anywhere);
+    /// - it is an existing directory (lstat), not a symlink;
+    /// - it is STRICTLY inside the home directory (never the home directory itself);
+    /// - neither it nor anything below it is deny-listed (it is not inside, and does not contain, a
+    ///   protected location such as ~/Documents, ~/Desktop, ~/Library/Mobile Documents, ~/.ssh);
+    /// - it is not inside (or an ancestor of) a cloud-sync root.
+    public static func resolve(environment: SafeCleanEnvironment) -> [CanonicalPath] {
+        resolve(environment: environment, waivedSystemRoots: [])
+    }
+
+    /// Test-only form: fixture homes live under `/private/var/folders`, which is deny-listed.
+    @_spi(FixtureTesting)
+    public static func resolve(environment: SafeCleanEnvironment, waivedSystemRoots: [String]) -> [CanonicalPath] {
+        let configured = environment.scanSettings.projectRoots
+        guard !configured.isEmpty else { return [] }
+        let canonicalizer = PathCanonicalizer(environment: environment)
+        let homeForms = PreconditionEvaluator.homeForms(environment: environment, canonicalizer: canonicalizer)
+        guard !homeForms.isEmpty else { return [] }
+        var homes = [environment.homePath]
+        for form in homeForms where !homes.contains(form.path) { homes.append(form.path) }
+        let denyLists = homes.map { home in
+            waivedSystemRoots.isEmpty
+                ? DenyList(homeDirectory: home)
+                : DenyList(homeDirectory: home, waivedSystemRoots: waivedSystemRoots)
+        }
+        let evaluator = PreconditionEvaluator(environment: environment)
+        let cloudRoots = evaluator.cloudRoots()
+        guard !cloudRoots.isEmpty else { return [] }
+
+        var roots: [CanonicalPath] = []
+        for raw in configured {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed == raw else { continue }
+            guard case .success(let lexical) = canonicalizer.lexical(raw),
+                  case .success(let canonical) = canonicalizer.canonicalize(raw),
+                  canonical == lexical else { continue }
+            guard let info = environment.fileSystem.lstat(canonical.path), info.isDirectory, !info.isSymlink else { continue }
+            guard let home = homeForms.first(where: { canonical.isStrictlyInside($0) }) else { continue }
+            // SAFETY-DECISION (M5 integration): a root at or below a folder named like a project
+            // artifact (`~/code/app/node_modules`) or inside a package / bundle would let nested
+            // artifacts be proposed; such a root is ignored here too, so SafetyGate never accepts a
+            // root the ProjectScanner would refuse to walk.
+            let below = canonical.components.dropFirst(home.components.count)
+            guard !below.contains(where: { ProjectArtifactsInspector.isArtifactLikeName($0) || ProjectArtifactsInspector.isPackageName($0) }),
+                  SafetyGate.bundleAncestor(of: canonical, fileSystem: environment.fileSystem) == nil else { continue }
+            let probe = canonical.appending("imop-project-root-probe")
+            let denied = denyLists.contains { list in
+                list.matchingEntry(for: canonical, ruleID: nil, purpose: .standard) != nil
+                    || list.matchingEntry(for: probe, ruleID: nil, purpose: .standard) != nil
+            }
+            guard !denied else { continue }
+            guard !cloudRoots.contains(where: { canonical.isInsideOrEqual($0) || $0.isStrictlyInside(canonical) }) else { continue }
+            if !roots.contains(canonical) { roots.append(canonical) }
+        }
+        return roots
     }
 }

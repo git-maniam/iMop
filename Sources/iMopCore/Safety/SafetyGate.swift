@@ -35,8 +35,15 @@ public struct SafetyGate: Sendable {
     public init(environment: SafeCleanEnvironment, userExclusions: [String], ageThresholdOverrides: [String: Int], waivedSystemRoots: [String]) {
         self.environment = environment
         self.canonicalizer = PathCanonicalizer(environment: environment)
-        self.evaluator = PreconditionEvaluator(environment: environment, ageThresholdOverrides: ageThresholdOverrides)
-        self.userExclusions = userExclusions
+        self.evaluator = PreconditionEvaluator(environment: environment, ageThresholdOverrides: ageThresholdOverrides,
+                                               waivedSystemRoots: waivedSystemRoots)
+        // SAFETY-DECISION (M5): the exclusions in the environment's settings always apply too, so a
+        // caller that forgets to pass them cannot drop one.
+        var exclusions = userExclusions
+        for exclusion in environment.scanSettings.userExclusions where !exclusions.contains(exclusion) {
+            exclusions.append(exclusion)
+        }
+        self.userExclusions = exclusions
         self.waivedSystemRoots = waivedSystemRoots
     }
 
@@ -151,6 +158,21 @@ public struct SafetyGate: Sendable {
             return (.rejected(rejection), [])
         }
 
+        // Check 11b — the target has the shape the rule may act on (review M2).
+        if let rejection = check11bRuleShape(resolved.canonical, target: target, rule: rule) {
+            return (.rejected(rejection), [])
+        }
+
+        // Check 11d — the inspector's file-system identity of the target still holds (review M5).
+        if let rejection = check11dInspectorIdentity(resolved.canonical, rule: rule) {
+            return (.rejected(rejection), [])
+        }
+
+        // Check 11c — nothing protected below the target (spec §3.5 applied to the contents).
+        if let rejection = check11cProtectedDescendants(resolved, targetStat: targetStat) {
+            return (.rejected(rejection), [])
+        }
+
         // Check 12 — preconditions.
         let (preconditionRejection, results) = await check12Preconditions(target: target, rule: rule)
         if let preconditionRejection { return (.rejected(preconditionRejection), results) }
@@ -198,6 +220,15 @@ public struct SafetyGate: Sendable {
         if case .commandItem = target.kind {
             guard case .command = rule.action else {
                 return .preconditionFailed(name: "actionMismatch", detail: "Item kind does not match the rule's action")
+            }
+            // SAFETY-DECISION (M4): a command item is only acceptable for one of the Swift-pinned
+            // vendor-command rules (exact tool, arguments, tier and inspector), and its per-item
+            // argument must pass that command's `{ITEM}` validator. Command items skip the path
+            // checks, so this is the check that keeps an edited rule or a tampered item from turning
+            // into an arbitrary command or an option-injected argument.
+            let matcher = RuleTargetMatcher(homeForms: [])
+            if let detail = matcher.commandItemMismatch(target, rule: rule) {
+                return .doesNotMatchRule(detail: detail)
             }
         }
         return nil
@@ -462,7 +493,10 @@ public struct SafetyGate: Sendable {
     private func check4AllowRootContainment(_ canonical: CanonicalPath, rule: Rule) -> Result<AllowRootMatch, SafetyRejection> {
         var usable: [CanonicalPath] = []
         var equalsARoot = false
-        for raw in rule.resolvedAllowRoots(home: environment.homePath) {
+        // SAFETY-DECISION (M5): `{PROJECT_ROOTS}` expands to the validated project roots of the
+        // environment's settings, re-resolved at every validation (a root the user removed, or that
+        // became a symlink, no longer contains anything).
+        for raw in rule.resolvedAllowRoots(environment: environment, waivedSystemRoots: waivedSystemRoots) {
             guard case .success(let lexicalRoot) = canonicalizer.lexical(raw) else { continue }
             if canonical == lexicalRoot { equalsARoot = true }
             guard case .success(let resolvedRoot) = canonicalizer.canonicalize(raw) else { continue }
@@ -600,9 +634,77 @@ public struct SafetyGate: Sendable {
         if !targetStat.isRegularFile && isBundle(canonical, name: name, isDirectory: targetStat.isDirectory) {
             let isWholeAppTrash: Bool = {
                 guard case .trash = rule.action, Self.bundleTrashRuleIDs.contains(rule.id) else { return false }
+                // SAFETY-DECISION (review M2): the whole-app exception is keyed by rule id, so it is
+                // granted only to a rule that passes catalog validation, i.e. has exactly the
+                // Swift-pinned shape for that id (tier, action, discovery, appleSigned, …). A rule
+                // built in code or edited in Rules.json with the same id gets no exception.
+                guard RuleCatalog.validationProblems(for: rule).isEmpty else { return false }
                 return targetStat.isDirectory && Self.pathExtension(of: name) == "app"
             }()
             if !isWholeAppTrash { return .insideBundle(component: name) }
+        }
+        return nil
+    }
+
+    // MARK: - Check 11b
+
+    /// SAFETY-DECISION (review M2): an allow-root plus a minimum depth is wider than what a rule
+    /// means. The canonical target must match one of the rule's glob patterns (with its
+    /// `excludedNames` honoured), or the Swift-coded shape of its inspector (see
+    /// `RuleTargetMatcher`); anything else is rejected here, at the last check before acting.
+    private func check11bRuleShape(_ canonical: CanonicalPath, target: ScanTarget, rule: Rule) -> SafetyRejection? {
+        let matcher = RuleTargetMatcher(homeForms: PreconditionEvaluator.homeForms(environment: environment,
+                                                                                    canonicalizer: canonicalizer))
+        guard let detail = matcher.mismatch(canonical, rule: rule, owningBundleID: target.owningBundleID) else { return nil }
+        return .doesNotMatchRule(detail: detail)
+    }
+
+    // MARK: - Check 11d
+
+    /// SAFETY-DECISION (review M5): for the Milestone 5 inspectors whose offer depends on what is on
+    /// disk around the target, the pure shape of check 11b is not enough. Right before acting the gate
+    /// re-proves that identity on the file system itself, independently of the rule's declared
+    /// preconditions (a stale plan, drift, or a rule built in code can never skip it):
+    /// - `projectArtifacts`: manifest pairing beside, marker inside, depth below the project root,
+    ///   repository / other version-control layout (`ProjectArtifactsInspector.identityProblem`);
+    /// - `lightroomPreviews`: the exact catalog `<name>.lrcat` is a regular file beside
+    ///   `<name> Previews.lrdata` (not merely any catalog);
+    /// - `appUserCachesUnknownOwner`: the folder holds no `com.apple.*` entry and can be listed.
+    private func check11dInspectorIdentity(_ canonical: CanonicalPath, rule: Rule) -> SafetyRejection? {
+        guard case .inspector(let inspector) = rule.discovery else { return nil }
+        let problem: String?
+        switch inspector {
+        case .projectArtifacts:
+            problem = ProjectArtifactsInspector.identityProblem(target: canonical, ruleID: rule.id, environment: environment,
+                                                                waivedSystemRoots: waivedSystemRoots)
+        case .lightroomPreviews:
+            problem = LightroomPreviewsInspector.identityProblem(target: canonical, fileSystem: environment.fileSystem)
+        case .appUserCachesUnknownOwner:
+            problem = UnknownOwnerCachesInspector.contentsProblem(target: canonical, fileSystem: environment.fileSystem)
+        default:
+            problem = nil
+        }
+        return problem.map { .doesNotMatchRule(detail: $0) }
+    }
+
+    // MARK: - Check 11c
+
+    /// SAFETY-DECISION (review M2): the deny-list "always wins" (spec §3.5) for a `.git` directory or
+    /// a protected extension anywhere, so a directory target that CONTAINS one (a `.git` inside a
+    /// cache, a `.photoslibrary` under Logs) is rejected: acting on it would move the protected item
+    /// with it. The tree is walked again at every validation (it may have changed since the scan).
+    /// If the walk cannot read the whole tree, nothing can be proven absent → rejected (fail closed).
+    /// A symlink target (rule opt-in) has no contents to walk: only the link is ever removed.
+    private func check11cProtectedDescendants(_ resolved: ResolvedTarget, targetStat: FileStat) -> SafetyRejection? {
+        guard targetStat.isDirectory, !targetStat.isSymlink, !resolved.isSymlinkTarget else { return nil }
+        guard let estimate = SizeCalculator(environment: environment).measure(path: resolved.canonical.path) else {
+            return .canonicalizationFailed("contents could not be inspected")
+        }
+        if let entry = estimate.protectedDescendantEntry {
+            return .denyListed(entry: "contains \(entry)")
+        }
+        guard estimate.complete else {
+            return .canonicalizationFailed("contents could not be fully inspected")
         }
         return nil
     }
@@ -617,10 +719,25 @@ public struct SafetyGate: Sendable {
     /// only if it has bundle structure — a `Contents`, `Info.plist`, `_CodeSignature`, `Versions` or
     /// `Resources` child — OR if it is not a directory, OR if its listing cannot be read (fail closed).
     private func isBundle(_ path: CanonicalPath, name: String, isDirectory: Bool) -> Bool {
-        guard Self.isBundleComponent(name) else { return false }
-        guard Self.isReverseDNSName(name), isDirectory else { return true }
-        guard let children = environment.fileSystem.contentsOfDirectory(path.path) else { return true }
-        return children.contains { Self.bundleStructureMarkers.contains(PathComparison.normalize($0)) }
+        Self.isBundle(path, name: name, isDirectory: isDirectory, fileSystem: environment.fileSystem)
+    }
+
+    /// Shared with the Scanner and GlobExpander (spec §7.2: never descend into packages).
+    static func isBundle(_ path: CanonicalPath, name: String, isDirectory: Bool, fileSystem: any FileSystemProbe) -> Bool {
+        guard isBundleComponent(name) else { return false }
+        guard isReverseDNSName(name), isDirectory else { return true }
+        guard let children = fileSystem.contentsOfDirectory(path.path) else { return true }
+        return children.contains { bundleStructureMarkers.contains(PathComparison.normalize($0)) }
+    }
+
+    /// The first ancestor component of `path` (excluding the last component) that is a bundle, or nil.
+    static func bundleAncestor(of path: CanonicalPath, fileSystem: any FileSystemProbe) -> String? {
+        var ancestor = CanonicalPath(components: [])
+        for component in path.components.dropLast() {
+            ancestor = ancestor.appending(component)
+            if isBundle(ancestor, name: component, isDirectory: true, fileSystem: fileSystem) { return component }
+        }
+        return nil
     }
 
     /// Child names (normalized) that identify a directory as a real bundle (macOS, iOS-style shallow

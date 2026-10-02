@@ -18,6 +18,9 @@ public enum SafetyRejection: Sendable, Hashable, Codable {
     case ubiquitousItem
     case fileProviderItem(attribute: String)
     case insideBundle(component: String)
+    /// The target is inside the rule's allow-root but is not one of the items the rule may act on
+    /// (its glob patterns / excluded names, or its inspector's Swift-coded shape).
+    case doesNotMatchRule(detail: String)
     case preconditionFailed(name: String, detail: String)
     case sanityLimitExceeded(bytes: Int64, items: Int)
     case userExcluded(path: String)
@@ -42,6 +45,7 @@ public enum SafetyRejection: Sendable, Hashable, Codable {
         case .ubiquitousItem: return "iCloud item"
         case .fileProviderItem(let attribute): return "Managed by a cloud File Provider (\(attribute))"
         case .insideBundle(let component): return "Inside an application or bundle (\(component))"
+        case .doesNotMatchRule(let detail): return "Not an item this rule may touch (\(detail))"
         case .preconditionFailed(let name, let detail): return detail.isEmpty ? "Precondition not met: \(name)" : detail
         case .sanityLimitExceeded(let bytes, let items): return "Unexpectedly large (\(bytes) bytes, \(items) items) — needs manual review"
         case .userExcluded(let path): return "Excluded in Settings (\(path))"

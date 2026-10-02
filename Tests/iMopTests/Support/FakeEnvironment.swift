@@ -300,6 +300,40 @@ final class FakeApplicationLocator: ApplicationLocating, @unchecked Sendable {
     }
 }
 
+// MARK: - Spotlight
+
+/// Spotlight file search fake: extension → paths; `failing` answers `nil` (error / timeout).
+final class FakeSpotlightSearch: SpotlightSearching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _results: [String: [String]]
+    private var _failing: Bool
+    private var _queries: [(String, [String]?)] = []
+
+    init(results: [String: [String]] = [:], failing: Bool = false) {
+        _results = results
+        _failing = failing
+    }
+
+    var results: [String: [String]] {
+        get { lock.lock(); defer { lock.unlock() }; return _results }
+        set { lock.lock(); _results = newValue; lock.unlock() }
+    }
+
+    var failing: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _failing }
+        set { lock.lock(); _failing = newValue; lock.unlock() }
+    }
+
+    var queries: [(String, [String]?)] { lock.lock(); defer { lock.unlock() }; return _queries }
+
+    func paths(withExtension ext: String, under roots: [String]?) -> [String]? {
+        lock.lock(); defer { lock.unlock() }
+        _queries.append((ext, roots))
+        if _failing { return nil }
+        return _results[ext.lowercased()] ?? []
+    }
+}
+
 // MARK: - Volumes
 
 final class FakeVolumeInspector: VolumeInspecting, @unchecked Sendable {
@@ -329,8 +363,20 @@ final class FakeVolumeInspector: VolumeInspecting, @unchecked Sendable {
         set { lock.lock(); _capacity = newValue; lock.unlock() }
     }
 
+    private var _importantCapacityQueue: [Int64?] = []
+
+    /// Successive `availableCapacityForImportantUsage` answers (one per call); once drained, the
+    /// fixed `importantCapacity` is returned again. Lets tests simulate before/after measurements.
+    func queueImportantCapacities(_ values: [Int64?]) {
+        lock.lock(); _importantCapacityQueue = values; lock.unlock()
+    }
+
     func mountedVolumes() -> [String]? { volumes }
-    func availableCapacityForImportantUsage(at path: String) -> Int64? { importantCapacity }
+    func availableCapacityForImportantUsage(at path: String) -> Int64? {
+        lock.lock(); defer { lock.unlock() }
+        if !_importantCapacityQueue.isEmpty { return _importantCapacityQueue.removeFirst() }
+        return _importantCapacity
+    }
     func availableCapacity(at path: String) -> Int64? { capacity }
 }
 
@@ -341,6 +387,14 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
         let executable: String
         let arguments: [String]
         let timeout: TimeInterval
+        let purpose: CommandPurpose
+
+        init(executable: String, arguments: [String], timeout: TimeInterval, purpose: CommandPurpose = .readOnly) {
+            self.executable = executable
+            self.arguments = arguments
+            self.timeout = timeout
+            self.purpose = purpose
+        }
     }
 
     private let lock = NSLock()
@@ -384,9 +438,17 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
         executables[tool]
     }
 
+    /// The purpose-less form means `.readOnly` (same as the protocol default).
     func run(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult {
-        record(Invocation(executable: executable, arguments: arguments, timeout: timeout))
+        record(Invocation(executable: executable, arguments: arguments, timeout: timeout, purpose: .readOnly))
     }
+
+    func run(executable: String, arguments: [String], timeout: TimeInterval, purpose: CommandPurpose) async -> CommandResult {
+        record(Invocation(executable: executable, arguments: arguments, timeout: timeout, purpose: purpose))
+    }
+
+    /// Every recorded purpose, in order (tests assert Discovery/Safety only ever use `.readOnly`).
+    var purposes: [CommandPurpose] { invocations.map(\.purpose) }
 
     private func record(_ invocation: Invocation) -> CommandResult {
         lock.lock(); defer { lock.unlock() }
@@ -453,9 +515,12 @@ final class FakeEnvironment: @unchecked Sendable {
     let codeSignatures: FakeCodeSignatureVerifier
     let clock: FixedClock
 
+    let spotlight: FakeSpotlightSearch
+
     private let lock = NSLock()
     private var _effectiveUserID: UInt32
     private var _userID: UInt32
+    private var _scanSettings: ScanSettings = .default
 
     init(
         fixture: FixtureBuilder,
@@ -467,6 +532,7 @@ final class FakeEnvironment: @unchecked Sendable {
         commands: FakeCommandRunner = FakeCommandRunner(),
         codeSignatures: FakeCodeSignatureVerifier = FakeCodeSignatureVerifier(),
         clock: FixedClock = FixedClock(),
+        spotlight: FakeSpotlightSearch = FakeSpotlightSearch(),
         effectiveUserID: UInt32 = geteuid(),
         userID: UInt32 = getuid()
     ) {
@@ -479,6 +545,7 @@ final class FakeEnvironment: @unchecked Sendable {
         self.commands = commands
         self.codeSignatures = codeSignatures
         self.clock = clock
+        self.spotlight = spotlight
         _effectiveUserID = effectiveUserID
         _userID = userID
     }
@@ -495,6 +562,13 @@ final class FakeEnvironment: @unchecked Sendable {
         set { lock.lock(); _userID = newValue; lock.unlock() }
     }
 
+    /// Milestone 5: the scan settings every new `environment` value carries (project roots, archives
+    /// to keep, overrides). Defaults to `ScanSettings.default` (no project roots).
+    var scanSettings: ScanSettings {
+        get { lock.lock(); defer { lock.unlock() }; return _scanSettings }
+        set { lock.lock(); _scanSettings = newValue; lock.unlock() }
+    }
+
     /// A fresh `SafeCleanEnvironment` value sharing these fakes.
     var environment: SafeCleanEnvironment {
         SafeCleanEnvironment(
@@ -508,7 +582,9 @@ final class FakeEnvironment: @unchecked Sendable {
             clock: clock,
             effectiveUserID: effectiveUserID,
             userID: userID,
-            codeSignatures: codeSignatures
+            codeSignatures: codeSignatures,
+            scanSettings: scanSettings,
+            spotlight: spotlight
         )
     }
 

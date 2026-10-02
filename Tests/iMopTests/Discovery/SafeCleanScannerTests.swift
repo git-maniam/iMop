@@ -48,6 +48,15 @@ struct SafeCleanScannerTests {
                                    "Library/Application Support/Google/Chrome/Default/GPUCache",
                                    "Library/Application Support/Google/Chrome/Profile 1/Cache",
                                    "Library/Caches/Google/Chrome/Default/Cache"],
+        // Milestone 5 (Yellow): the poetry virtualenv that was a Green decoy is now offered by its own
+        // Yellow rule (never preselected; preconditions olderThan(60) etc. checked at plan time).
+        "poetry.virtualenvs": ["Library/Caches/pypoetry/virtualenvs/proj-py3.12"],
+    ]
+
+    /// Milestone 5: forbidden components a specific Yellow rule is allowed to contain.
+    static let yellowAllowedComponents: [String: Set<String>] = [
+        "poetry.virtualenvs": ["virtualenvs"],
+        "browser.chromium.serviceWorkerCache": ["service worker"],
     ]
 
     static let expectedOwners: [String: String] = [
@@ -112,9 +121,9 @@ struct SafeCleanScannerTests {
     }
 
     @MainActor
-    static func makeScanner(_ env: FakeEnvironment, fda: Bool = true, catalog: RuleCatalog? = nil) throws -> iMopCore.Scanner {
+    static func makeScanner(_ env: FakeEnvironment, fda: Bool = true, catalog: RuleCatalog? = nil) throws -> SafeCleanScanner {
         let catalog = try catalog ?? RuleCatalog.load(data: M2.sourceRulesData(), environment: env.environment)
-        return iMopCore.Scanner(environment: env.environment, catalog: catalog, hasFullDiskAccess: fda,
+        return SafeCleanScanner(environment: env.environment, catalog: catalog, hasFullDiskAccess: fda,
                        waivedSystemRoots: [env.fixture.root])
     }
 
@@ -145,6 +154,17 @@ struct SafeCleanScannerTests {
                 let results = try await makeScanner(env).scan()
                 try TestSuite.assertEqual(Set(results.map(\.rule.id)), M2.expectedBundledRuleIDs)
                 for result in results {
+                    if M2.m4CommandRuleIDs.contains(result.rule.id) {
+                        // No vendor tool resolves in this fixture: command rules offer nothing.
+                        try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
+                        continue
+                    }
+                    if result.rule.usesProjectRoots {
+                        // Milestone 5: no project roots are configured by default → unavailable, nothing offered.
+                        guard case .unavailable = result.status else { throw TestError("\(result.rule.id): \(result.status)") }
+                        try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
+                        continue
+                    }
                     try TestSuite.assertEqual(result.status, .ok, result.rule.id)
                     let found = Set(result.targets.map { relative($0.path, f) })
                     try TestSuite.assertEqual(found, expected[result.rule.id] ?? [], result.rule.id)
@@ -215,7 +235,8 @@ struct SafeCleanScannerTests {
                     try TestSuite.assertFalse(rel.lowercased().contains("photoslibrary"), rel)
                     try TestSuite.assertFalse(rel.hasSuffix("linked") || rel.hasSuffix("linked-wheels") || rel.hasSuffix("DawnCache"), rel)
                     let components = Set(rel.split(separator: "/").map { $0.lowercased() })
-                    try TestSuite.assertTrue(components.isDisjoint(with: forbiddenComponents), rel)
+                    let forbidden = forbiddenComponents.subtracting(yellowAllowedComponents[target.ruleID] ?? [])
+                    try TestSuite.assertTrue(components.isDisjoint(with: forbidden), "\(target.ruleID): \(rel)")
                 }
                 // The 1 MiB file behind the symlinks is never counted.
                 let pip = byRule(results)["pip.cache"]?.allocatedBytes ?? 0
@@ -239,7 +260,7 @@ struct SafeCleanScannerTests {
         await TestSuite.run("Scanner: without the fixture waiver the deny-listed temp home yields nothing") {
             try await withScanEnv { env in
                 let catalog = RuleCatalog.load(data: try M2.sourceRulesData(), environment: env.environment)
-                let scanner = iMopCore.Scanner(environment: env.environment, catalog: catalog, hasFullDiskAccess: true)
+                let scanner = SafeCleanScanner(environment: env.environment, catalog: catalog, hasFullDiskAccess: true)
                 let results = await scanner.scan()
                 try TestSuite.assertEqual(results.flatMap(\.targets).count, 0, "/private/var/folders is deny-listed")
             }
@@ -251,6 +272,15 @@ struct SafeCleanScannerTests {
                 for result in results {
                     if fullDiskAccessRules.contains(result.rule.id) {
                         try TestSuite.assertEqual(result.status, .lockedNeedsFullDiskAccess, result.rule.id)
+                        try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
+                    } else if M2.m4CommandRuleIDs.contains(result.rule.id) {
+                        // Milestone 4: a command rule whose tool does not resolve fails closed
+                        // (.unavailable, no targets); none needs Full Disk Access.
+                        try TestSuite.assertTrue(result.status != .lockedNeedsFullDiskAccess, result.rule.id)
+                        try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
+                    } else if result.rule.usesProjectRoots {
+                        // Milestone 5: no project roots configured → unavailable (never FDA-locked).
+                        guard case .unavailable = result.status else { throw TestError("\(result.rule.id): \(result.status)") }
                         try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
                     } else {
                         try TestSuite.assertEqual(result.status, .ok, result.rule.id)
@@ -335,10 +365,10 @@ struct SafeCleanScannerTests {
         await TestSuite.run("Scanner: unimplemented inspectors and command rules report unavailable") {
             try await M1.withEnv { env in
                 let rules = [
-                    M1.rule(id: "test.inspector", discovery: .inspector(.xcodeDerivedData)),
+                    M1.rule(id: "test.inspector", discovery: .inspector(.orphanedAppData)),
                     M1.rule(id: "test.command", tier: .yellow,
-                            action: .command(CommandSpec(tool: "brew", arguments: ["cleanup"], idempotentSafe: true)),
-                            discovery: .command(CommandSpec(tool: "brew", arguments: ["cleanup", "--dry-run"], idempotentSafe: true))),
+                            action: .command(CommandSpec(tool: "brew", arguments: ["cleanup", "--prune=all"], idempotentSafe: true)),
+                            discovery: .command(CommandSpec(tool: "brew", arguments: ["cleanup", "--prune=all", "-n"], idempotentSafe: true))),
                 ]
                 let catalog = RuleCatalog(validating: rules, environment: env.environment)
                 try TestSuite.assertEqual(catalog.rules.count, 2, "\(catalog.disabled)")

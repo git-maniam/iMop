@@ -5,7 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "📦 Building iMop executable with Swift Package Manager..."
-SWIFT_EXEC="$SCRIPT_DIR/swiftc-wrapper.sh" swift build --package-path "$PROJECT_DIR" -c release --product iMop
+# SafeClean (spec §0.5): only this release packaging step compiles in IMOP_ALLOW_MUTATION, the flag
+# that lets the Executor / Quarantine actually move or remove files. Debug builds (`swift run iMop`)
+# never pass it and stay dry-run. Never add this define to Package.swift.
+SWIFT_EXEC="$SCRIPT_DIR/swiftc-wrapper.sh" swift build --package-path "$PROJECT_DIR" -c release --product iMop -Xswiftc -DIMOP_ALLOW_MUTATION
 
 BUILD_BIN="$PROJECT_DIR/.build/release/iMop"
 if [ ! -f "$BUILD_BIN" ]; then

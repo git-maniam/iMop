@@ -230,6 +230,14 @@ public struct GlobExpander: Sendable {
                         }
                         // SAFETY-DECISION: a final match on another volume (a mount point) is dropped.
                     } else if st.isDirectory, !st.isSymlink, st.device == baseDevice {
+                        // SAFETY-DECISION (review M2, spec §7.2): never descend into a package/bundle
+                        // (`.app`, `.framework`, `.bundle`, …; same test as SafetyGate check 11).
+                        // Deny-listed intermediate directories are not pruned here: every final match
+                        // is deny-list-checked by the Scanner and SafetyGate, and the deny-list's
+                        // prefix semantics cover everything below a protected directory (rule
+                        // exceptions such as Mail Downloads need the full rule context).
+                        if SafetyGate.isBundle(CanonicalPath(validatedPath: child), name: name,
+                                               isDirectory: true, fileSystem: fs) { continue }
                         next.append(child)
                     }
                 }

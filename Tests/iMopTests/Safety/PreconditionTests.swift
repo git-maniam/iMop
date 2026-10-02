@@ -401,12 +401,14 @@ struct PreconditionTests {
             }
         }
 
-        await TestSuite.run("LiveEnvironment.make: real uid/euid, Milestone-1 placeholders") {
+        await TestSuite.run("LiveEnvironment.make: real uid/euid, the trusted CommandRunner (Milestone 4)") {
             let live = LiveEnvironment.make()
             try TestSuite.assertEqual(live.effectiveUserID, geteuid())
             try TestSuite.assertEqual(live.userID, getuid())
-            try TestSuite.assertNil(live.commands.resolveExecutable("xcrun"))
-            try TestSuite.assertTrue(live.commands is DisabledCommandRunner)
+            // Milestone 4 replaced the DisabledCommandRunner placeholder. Nothing is resolved or run
+            // here: the live runner's trusted directories include the REAL home's tool folders.
+            try TestSuite.assertTrue(live.commands is CommandRunner)
+            try TestSuite.assertFalse(live.commands is DisabledCommandRunner)
         }
     }
 }

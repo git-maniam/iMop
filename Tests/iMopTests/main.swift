@@ -11,6 +11,8 @@ struct TestRunner {
         RealHomeTripwire.install()
 
         print("\n🚀 Starting iMop Test Suite Execution...")
+        // Fixture-leak check: every iMopTests-* tree this run creates must be removed by the end.
+        let fixturesBefore = FixtureLeakCheck.fixtureRootNames()
 
         // Milestone 1 — SafeClean safety layer (spec §12.1).
         await CanonicalizerTests.runAll()
@@ -25,13 +27,48 @@ struct TestRunner {
         await SizerTests.runAll()
         await SafeCleanScannerTests.runAll()
         await StaticReadOnlyTests.runAll()
+        await M2ReviewRegressionTests.runAll()
+
+        // Milestone 3 — plan, confirmation hash, Quarantine, Executor, audit log (spec §3.1, §5, §11, §13 M3).
+        await PlanTests.runAll()
+        await QuarantineTests.runAll()
+        await ExecutorTests.runAll()
+        await AuditLogTests.runAll()
+        await M3ReviewRegressionTests.runAll()
+
+        // Milestone 4 — CommandRunner and vendor command rules (spec §5.3, §6, §12.2, §13 M4).
+        await CommandRunnerTests.runAll()
+        await CommandClientTests.runAll()
+        await CommandInspectorTests.runAll()
+        await M4ReviewRegressionTests.runAll()
+
+        // Milestone 5 — Yellow rules, XcodeInspector, ProjectScanner, AI model rules (spec §6, §13 M5).
+        await XcodeInspectorTests.runAll()
+        await ProjectScannerTests.runAll()
+        await OtherYellowInspectorTests.runAll()
+        await YellowPolicyTests.runAll()
+        await M5ReviewRegressionTests.runAll()
 
         // v1.0 suites (replaced in Milestone 7).
         await ScannerTests.runAll()
         await AppRegistryTests.runAll()
         await SafetyAndDeletionTests.runAll()
 
+        await TestSuite.run("Fixtures: no iMopTests-* directory created by this run is left in the temporary directory") {
+            let leftovers = FixtureLeakCheck.fixtureRootNames().subtracting(fixturesBefore)
+            try TestSuite.assertTrue(leftovers.isEmpty, "leaked fixture roots: \(leftovers.sorted())")
+        }
+
         let exitCode = TestSuite.printSummary()
         exit(exitCode)
+    }
+}
+
+/// Lists the `iMopTests-*` fixture roots directly inside the temporary directory (names only).
+enum FixtureLeakCheck {
+    static func fixtureRootNames() -> Set<String> {
+        let tmp = FileManager.default.temporaryDirectory.path
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: tmp)) ?? []
+        return Set(names.filter { $0.hasPrefix("iMopTests-") })
     }
 }

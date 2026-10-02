@@ -26,6 +26,13 @@ public struct SizeEstimate: Sendable, Hashable {
     /// `false` when the walk was cancelled or any part of the tree could not be read; the numbers
     /// are then a lower bound.
     public let complete: Bool
+    /// Deny-list label (`".git"`, `".photoslibrary"`, …) of the first entry found BELOW the measured
+    /// root whose name is protected by spec §3.5 ("any git repository's .git directory", "any path
+    /// with extension …"). `nil` when none was seen (in the part of the tree that could be read).
+    public let protectedDescendantEntry: String?
+
+    /// `true` when an entry below the root carries a deny-listed name (see `protectedDescendantEntry`).
+    public var containsProtectedDescendant: Bool { protectedDescendantEntry != nil }
 
     public init(
         allocatedBytes: Int64,
@@ -34,7 +41,8 @@ public struct SizeEstimate: Sendable, Hashable {
         newestModification: Date?,
         hardLinkedBytesExcluded: Int64,
         crossedMountPointsSkipped: Int,
-        complete: Bool
+        complete: Bool,
+        protectedDescendantEntry: String? = nil
     ) {
         self.allocatedBytes = allocatedBytes
         self.reclaimableBytes = reclaimableBytes
@@ -43,6 +51,7 @@ public struct SizeEstimate: Sendable, Hashable {
         self.hardLinkedBytesExcluded = hardLinkedBytesExcluded
         self.crossedMountPointsSkipped = crossedMountPointsSkipped
         self.complete = complete
+        self.protectedDescendantEntry = protectedDescendantEntry
     }
 }
 
@@ -64,11 +73,33 @@ public struct SizeCalculator: Sendable {
         self.environment = environment
     }
 
-    /// Measures `path`. Returns `nil` when the root itself cannot be examined or opened.
+    /// Measures `path`. Returns `nil` when the root itself cannot be examined or opened, or when
+    /// `path` is not an absolute path in normal form.
+    ///
+    /// SAFETY-DECISION (review M2): symlinks are never followed at ANY level of `path`:
+    /// - a path that is not in normal form (trailing "/", "." / ".." / empty components, or "/"
+    ///   itself) is refused, because POSIX resolves a final symlink for "link/" and "link/.";
+    /// - the root's PARENT directory is opened with `O_NOFOLLOW_ANY`, so a symlink in any ancestor
+    ///   component (/tmp, /var, or a link swapped in after canonicalization) makes the measurement
+    ///   fail (`nil`) instead of measuring the link's destination;
+    /// - the root itself is examined relative to that descriptor with getattrlistat(FSOPT_NOFOLLOW)
+    ///   and opened with openat(O_NOFOLLOW): a symlink root is measured as itself (1 item, 0 bytes);
+    /// - the real-home guard sees both the input and where the opened directories really are
+    ///   (F_GETPATH).
     public func measure(path: String) -> SizeEstimate? {
+        // Refused before anything else (no system call, no guard lookup) when not in normal form.
+        guard Self.isNormalAbsolutePath(path) else { return nil }
         RealHomeGuard.check(path)
-        guard !path.isEmpty, path.hasPrefix("/") else { return nil }
-        guard let root = Self.attributes(ofPath: path) else { return nil }
+        let parts = path.dropFirst().split(separator: "/").map(String.init)
+        guard let last = parts.last else { return nil }
+        let parentPath = "/" + parts.dropLast().joined(separator: "/")
+        guard let parentFD = Self.openAncestor(path: parentPath) else { return nil }
+        defer { _ = Darwin.close(parentFD) }
+        if let opened = Self.openedPath(parentFD) {
+            RealHomeGuard.check(opened == "/" ? "/" + last : opened + "/" + last)
+        }
+        let rootName = Array(last.utf8CString)
+        guard let root = Self.attributes(of: rootName, in: parentFD) else { return nil }
         guard let rootType = root.objectType else { return nil }
 
         var walk = SizingWalk()
@@ -81,7 +112,11 @@ public struct SizeCalculator: Sendable {
             return walk.finish()
         }
 
-        guard let rootFD = Self.openDirectory(path: path) else { return nil }
+        let rootFD = Self.openDirectory(at: parentFD, name: rootName)
+        guard rootFD >= 0 else { return nil }
+        if let opened = Self.openedPath(rootFD) {
+            RealHomeGuard.check(opened)
+        }
         var stack: [SizingFrame] = []
         defer {
             for frame in stack where frame.fd >= 0 { _ = Darwin.close(frame.fd) }
@@ -174,6 +209,24 @@ public struct SizeCalculator: Sendable {
 
         return walk.finish()
     }
+
+    /// Absolute, non-root, and already in normal form: no empty, "." or ".." component, no trailing
+    /// "/", no NUL.
+    static func isNormalAbsolutePath(_ path: String) -> Bool {
+        guard path.hasPrefix("/"), path.count > 1, !path.contains("\0") else { return false }
+        let components = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+        return components.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+
+    /// Spec §3.5 deny-list label carried by an entry NAME (normalized), or nil.
+    static func protectedNameLabel(_ name: String) -> String? {
+        let normalized = PathComparison.normalize(name)
+        if normalized == ".git" { return ".git" }
+        for ext in DenyList.protectedExtensions where normalized.hasSuffix("." + ext) {
+            return "." + ext
+        }
+        return nil
+    }
 }
 
 // MARK: - Internals
@@ -192,12 +245,18 @@ private enum SizingAttrBit {
     static let cmnObjType = attrgroup_t(truncatingIfNeeded: ATTR_CMN_OBJTYPE)
     static let cmnModTime = attrgroup_t(truncatingIfNeeded: ATTR_CMN_MODTIME)
     static let cmnFileID = attrgroup_t(truncatingIfNeeded: ATTR_CMN_FILEID)
+    static let cmnFlags = attrgroup_t(truncatingIfNeeded: ATTR_CMN_FLAGS)
     static let cmnError = attrgroup_t(truncatingIfNeeded: ATTR_CMN_ERROR)
     static let cmnReturnedAttrs = attrgroup_t(truncatingIfNeeded: ATTR_CMN_RETURNED_ATTRS)
     static let dirMountStatus = attrgroup_t(truncatingIfNeeded: ATTR_DIR_MOUNTSTATUS)
     static let fileLinkCount = attrgroup_t(truncatingIfNeeded: ATTR_FILE_LINKCOUNT)
     static let fileAllocSize = attrgroup_t(truncatingIfNeeded: ATTR_FILE_ALLOCSIZE)
     static let cmnextPrivateSize = attrgroup_t(truncatingIfNeeded: ATTR_CMNEXT_PRIVATESIZE)
+    static let cmnextExtFlags = attrgroup_t(truncatingIfNeeded: ATTR_CMNEXT_EXT_FLAGS)
+    /// `UF_COMPRESSED` (decmpfs-compressed file) from <sys/stat.h>.
+    static let compressedFlag = UInt32(truncatingIfNeeded: UF_COMPRESSED)
+    /// `EF_MAY_SHARE_BLOCKS` from <sys/attr.h>: the file may share blocks with another file (clone).
+    static let mayShareBlocks: UInt64 = 0x0000_0001
     static let mountPointFlag = UInt32(truncatingIfNeeded: DIR_MNTSTATUS_MNTPOINT)
 }
 
@@ -215,11 +274,15 @@ private struct SizingAttributes {
     var device: Int32?
     var objectType: UInt32?
     var modificationDate: Date?
+    /// `ATTR_CMN_FLAGS` (st_flags).
+    var flags: UInt32?
     var fileID: UInt64?
     var mountStatus: UInt32?
     var linkCount: UInt32?
     var allocatedSize: Int64?
     var privateSize: Int64?
+    /// `ATTR_CMNEXT_EXT_FLAGS` (EF_* bits).
+    var extendedFlags: UInt64?
 }
 
 private struct SizingPendingDirectory {
@@ -254,6 +317,7 @@ private struct SizingWalk {
     var complete = true
     var links: [SizingLinkKey: SizingLinkRecord] = [:]
     var visitedDirectories: Set<SizingLinkKey> = []
+    var protectedDescendant: String?
 
     mutating func noteModification(_ date: Date?) {
         guard let date else { return }
@@ -278,8 +342,22 @@ private struct SizingWalk {
         // SAFETY-DECISION: private size is clamped to [0, allocated] so a file system quirk can
         // never make us promise more than is on disk. Fallback to allocated only when the private
         // size attribute is not available (non-APFS volumes).
+        // SAFETY-DECISION (review M2): APFS reports a private size of 0 for decmpfs-compressed files
+        // (UF_COMPRESSED) even when they share no blocks with anything. Only when the file system
+        // positively says the file cannot share blocks (EXT_FLAGS returned with EF_MAY_SHARE_BLOCKS
+        // clear) is the private size treated as unavailable and the allocated size used instead
+        // (still subject to the hard-link rules below). If the may-share bit is set, or the flags
+        // were not returned, the private size stands: never promise more than is freed.
+        let privateSizeUsable: Bool = {
+            guard entry.privateSize != nil else { return false }
+            if let flags = entry.flags, flags & SizingAttrBit.compressedFlag != 0,
+               let ext = entry.extendedFlags, ext & SizingAttrBit.mayShareBlocks == 0 {
+                return false
+            }
+            return true
+        }()
         let reclaimableBytes: Int64
-        if let rawPrivate = entry.privateSize {
+        if privateSizeUsable, let rawPrivate = entry.privateSize {
             reclaimableBytes = min(max(0, rawPrivate), allocatedBytes)
         } else {
             reclaimableBytes = allocatedBytes
@@ -336,7 +414,8 @@ private struct SizingWalk {
             newestModification: newest,
             hardLinkedBytesExcluded: hardLinkedExcluded,
             crossedMountPointsSkipped: crossedMountPointsSkipped,
-            complete: complete
+            complete: complete,
+            protectedDescendantEntry: protectedDescendant
         )
     }
 
@@ -357,7 +436,7 @@ extension SizeCalculator {
         list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
         list.reserved = 0
         var common = SizingAttrBit.cmnReturnedAttrs | SizingAttrBit.cmnDevID | SizingAttrBit.cmnObjType
-            | SizingAttrBit.cmnModTime | SizingAttrBit.cmnFileID
+            | SizingAttrBit.cmnModTime | SizingAttrBit.cmnFlags | SizingAttrBit.cmnFileID
         if bulk {
             common |= SizingAttrBit.cmnName | SizingAttrBit.cmnError
         }
@@ -366,22 +445,24 @@ extension SizeCalculator {
         list.dirattr = bulk ? SizingAttrBit.dirMountStatus : 0
         list.fileattr = SizingAttrBit.fileLinkCount | SizingAttrBit.fileAllocSize
         // With FSOPT_ATTR_CMN_EXTENDED, forkattr carries the ATTR_CMNEXT_* bits.
-        list.forkattr = SizingAttrBit.cmnextPrivateSize
+        list.forkattr = SizingAttrBit.cmnextPrivateSize | SizingAttrBit.cmnextExtFlags
         return list
     }
 
     private static var bulkOptions: UInt64 { UInt64(FSOPT_ATTR_CMN_EXTENDED) }
+    /// The root is a single name relative to its (no-follow-opened) parent; FSOPT_NOFOLLOW keeps a
+    /// final symlink from being followed.
     private static var singleOptions: UInt32 { UInt32(FSOPT_NOFOLLOW) | UInt32(FSOPT_ATTR_CMN_EXTENDED) }
 
-    /// getattrlist(2) on `path` itself (never following a final symlink).
-    private static func attributes(ofPath path: String) -> SizingAttributes? {
+    /// getattrlistat(2) on `name` inside `parentFD` itself (never following a final symlink).
+    private static func attributes(of name: [CChar], in parentFD: Int32) -> SizingAttributes? {
         var list = makeAttrList(bulk: false)
         let size = 512
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 8)
         defer { buffer.deallocate() }
         var attempts = 0
         while true {
-            let rc = path.withCString { getattrlist($0, &list, buffer, size, singleOptions) }
+            let rc = name.withUnsafeBufferPointer { getattrlistat(parentFD, $0.baseAddress!, &list, buffer, size, UInt(singleOptions)) }
             if rc == 0 { break }
             if errno == EINTR && attempts < 64 { attempts += 1; continue }
             return nil
@@ -434,6 +515,11 @@ extension SizeCalculator {
             guard let seconds: Int64 = cursor.read(), let nanoseconds: Int64 = cursor.read() else { return nil }
             result.modificationDate = Date(timeIntervalSince1970: Double(seconds) + Double(nanoseconds) / 1_000_000_000)
         }
+        // Packed in attribute bit order: ATTR_CMN_FLAGS (0x40000) comes before ATTR_CMN_FILEID.
+        if returnedCommon & SizingAttrBit.cmnFlags != 0 {
+            guard let flags: UInt32 = cursor.read() else { return nil }
+            result.flags = flags
+        }
         if returnedCommon & SizingAttrBit.cmnFileID != 0 {
             guard let fileID: UInt64 = cursor.read() else { return nil }
             result.fileID = fileID
@@ -453,6 +539,11 @@ extension SizeCalculator {
         if returnedFork & SizingAttrBit.cmnextPrivateSize != 0 {
             guard let privateSize: Int64 = cursor.read() else { return nil }
             result.privateSize = privateSize
+        }
+        // ATTR_CMNEXT_EXT_FLAGS (0x200) is packed after ATTR_CMNEXT_PRIVATESIZE (0x8).
+        if returnedFork & SizingAttrBit.cmnextExtFlags != 0 {
+            guard let extFlags: UInt64 = cursor.read() else { return nil }
+            result.extendedFlags = extFlags
         }
         return result
     }
@@ -540,6 +631,13 @@ extension SizeCalculator {
                 }
                 walk.itemCount += 1
                 walk.noteModification(entry.modificationDate)
+                if walk.protectedDescendant == nil, let name = entry.name {
+                    // SAFETY-DECISION (review M2): spec §3.5 protects a .git directory or a protected
+                    // extension ANYWHERE; a target that contains one must never be acted on.
+                    let length = name.firstIndex(of: 0) ?? name.count
+                    let text = String(decoding: name.prefix(length).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+                    walk.protectedDescendant = SizeCalculator.protectedNameLabel(text)
+                }
 
                 if type == SizingVnodeType.directory {
                     if let status = entry.mountStatus, status & SizingAttrBit.mountPointFlag != 0 {
@@ -562,12 +660,13 @@ extension SizeCalculator {
 
     private static let directoryFlags: Int32 = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK
 
-    /// Opens the root directory. O_NOFOLLOW: a final symlink is never followed.
+    /// Opens the root's parent directory. O_NOFOLLOW_ANY (which cannot be combined with O_NOFOLLOW):
+    /// a symlink in ANY component fails with ELOOP.
     /// SAFETY-DECISION: O_NONBLOCK so a FIFO swapped in for a directory can never block the scan.
-    private static func openDirectory(path: String) -> Int32? {
+    private static func openAncestor(path: String) -> Int32? {
         var attempts = 0
         while true {
-            let fd = path.withCString { Darwin.open($0, directoryFlags) }
+            let fd = path.withCString { Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW_ANY) }
             if fd >= 0 { return fd }
             if errno == EINTR && attempts < 64 { attempts += 1; continue }
             return nil // ENOTDIR, ELOOP (symlink), EACCES, ENOENT, …
@@ -582,6 +681,15 @@ extension SizeCalculator {
             if errno == EINTR && attempts < 64 { attempts += 1; continue }
             return -1
         }
+    }
+
+    /// Where the opened descriptor really is (F_GETPATH), for the real-home guard.
+    private static func openedPath(_ fd: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN) + 1)
+        let rc = buffer.withUnsafeMutableBufferPointer { fcntl(fd, F_GETPATH, $0.baseAddress!) }
+        guard rc != -1 else { return nil }
+        let length = buffer.firstIndex(of: 0) ?? buffer.count
+        return String(decoding: buffer.prefix(length).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     private static func retryingFstat(_ fd: Int32, _ st: inout Darwin.stat) -> Bool {
@@ -611,20 +719,36 @@ extension SizeCalculator {
 
     /// Re-opens a frame closed by the descriptor limit by walking down from its nearest open
     /// ancestor with openat(O_NOFOLLOW), verifying device and inode of every component.
+    ///
+    /// Each step only needs its parent's descriptor, so the intermediate descriptor is closed as soon
+    /// as the next one is open: at most the ancestor, one intermediate and the new descriptor are open
+    /// at any moment (review M2: re-opening a deep chain must not burst past RLIMIT_NOFILE).
     private static func reopen(frameAt target: Int, in stack: inout [SizingFrame], device: dev_t) -> Bool {
         var ancestor = target - 1
         while ancestor > 0 && stack[ancestor].fd < 0 { ancestor -= 1 }
         guard ancestor >= 0, stack[ancestor].fd >= 0 else { return false }
         for index in (ancestor + 1)...target {
             let fd = openDirectory(at: stack[index - 1].fd, name: stack[index].name)
-            guard fd >= 0 else { return false }
+            let previous = index - 1
+            func releasePrevious() {
+                if previous != ancestor, previous != 0, stack[previous].fd >= 0 {
+                    _ = Darwin.close(stack[previous].fd)
+                    stack[previous].fd = -1
+                }
+            }
+            guard fd >= 0 else {
+                releasePrevious()
+                return false
+            }
             var st = Darwin.stat()
             guard retryingFstat(fd, &st), (st.st_mode & S_IFMT) == S_IFDIR,
                   st.st_dev == device, UInt64(st.st_ino) == stack[index].inode else {
                 _ = Darwin.close(fd)
+                releasePrevious()
                 return false
             }
             stack[index].fd = fd
+            releasePrevious()
         }
         enforceDescriptorLimit(&stack)
         return stack[target].fd >= 0
