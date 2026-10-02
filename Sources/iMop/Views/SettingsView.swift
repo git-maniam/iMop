@@ -4,7 +4,8 @@ import SwiftUI
 
 // Spec §9.9: Settings — project roots, exclusions (folder picker), retention overrides (may only
 // lengthen), age-threshold overrides (may only raise), archives to keep, "Always quarantine" (ON by
-// default) and "Forget remembered drives". Every change is persisted by `AppState.settings` and
+// default), "Trust Homebrew tools" (OFF by default; turning it on shows who else could change those
+// tools and asks first) and "Forget remembered drives". Every change is persisted by `AppState.settings` and
 // takes effect for the NEXT scan.
 
 struct SettingsView: View {
@@ -12,6 +13,9 @@ struct SettingsView: View {
 
     @LocalState private var confirmDisableAlwaysQuarantine = false
     @LocalState private var confirmForgetDrives = false
+    @LocalState private var confirmTrustHomebrew = false
+    /// What the "Trust Homebrew tools" confirmation shows: the other admin accounts (`nil` = unknown).
+    @LocalState private var homebrewDisclosure: [String]? = nil
 
     init() {}
 
@@ -43,6 +47,7 @@ struct SettingsView: View {
             }
 
             alwaysQuarantineSection
+            homebrewTrustSection
             projectRootsSection
             exclusionsSection
             retentionSection
@@ -65,6 +70,20 @@ struct SettingsView: View {
                 .keyboardShortcut(.defaultAction)
         } message: {
             Text("Items that can only be deleted permanently (emptying the Trash and crash core dumps in /cores) become available and are then deleted in one step, without Quarantine. Each one is still listed as not undoable and needs your acknowledgement in the review; Empty Trash also asks for its own confirmation.")
+        }
+        .confirmationDialog(
+            "Trust Homebrew tools?",
+            isPresented: Binding(get: { confirmTrustHomebrew }, set: { confirmTrustHomebrew = $0 }),
+            titleVisibility: .visible
+        ) {
+            Button("Trust Homebrew Tools") {
+                appState.setTrustHomebrewTools(true, disclosedAccounts: homebrewDisclosure)
+            }
+            // SAFETY-DECISION: keeping the setting OFF is the default (Return) action.
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(homebrewTrustMessage)
         }
         .confirmationDialog(
             "Forget remembered drives?",
@@ -138,6 +157,55 @@ struct SettingsView: View {
             }
             .accessibilityLabel("Always quarantine, never permanently delete in one step")
         }
+    }
+
+    // MARK: Homebrew tools
+
+    private var homebrewTrustSection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { appState.settings.trustHomebrewAdminWritableDirectories },
+                set: { newValue in
+                    // SAFETY-DECISION: turning the relaxation ON asks first (showing who else could
+                    // change the tools); turning it OFF is immediate.
+                    if newValue {
+                        homebrewDisclosure = appState.homebrewTrustDisclosure()
+                        confirmTrustHomebrew = true
+                    } else {
+                        appState.setTrustHomebrewTools(false, disclosedAccounts: appState.homebrewTrustDisclosure())
+                    }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trust Homebrew tools in \(appState.homebrewLocation)")
+                    Text("Off by default. Homebrew's folders can be changed by every account in the admin group, so iMop does not run brew, npm, yarn, pnpm, go and other Homebrew tools unless you turn this on. Their cleanup rules show as unavailable until then.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityLabel("Trust Homebrew tools in \(appState.homebrewLocation)")
+        } header: {
+            Text("Command-line tools")
+        }
+    }
+
+    private var homebrewTrustMessage: String {
+        let what = "iMop will also run Homebrew tools whose folders in \(appState.homebrewLocation) the admin group can change — "
+            + "only folders you own, in Homebrew's own locations, that are not writable by everyone. "
+            + "The tools themselves and every other check stay the same. This setting is off by default; "
+            + "it applies from the next scan and you can turn it off at any time."
+        guard let accounts = homebrewDisclosure else {
+            return "iMop could not determine which accounts are in the admin group. Any of them could replace these tools "
+                + "with other programs that iMop would then run as you. Only continue if you know who can sign in to this Mac as an administrator.\n\n"
+                + what
+        }
+        if accounts.isEmpty {
+            return "No other account (besides you and root) is in the admin group, so no one else can change these tools today. "
+                + "An administrator added later could.\n\n" + what
+        }
+        return "These accounts can change Homebrew tools, and iMop would then run what they put there as you: "
+            + accounts.joined(separator: ", ") + ".\n\n" + what
     }
 
     // MARK: Project roots

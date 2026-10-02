@@ -385,7 +385,8 @@ public struct SafeCleanScanner: Sendable {
                 return finish([], .unavailable("Cleaned with \(pair.tool)'s own command instead"))
             }
             if rule.id == pair.commandRuleID, !resolves {
-                return finish([], .unavailable("\(pair.tool) is not installed in a trusted location"))
+                return finish([], .unavailable(environment.commands.unavailableReason(for: pair.tool)
+                    ?? "\(pair.tool) is not installed in a trusted location"))
             }
         }
 

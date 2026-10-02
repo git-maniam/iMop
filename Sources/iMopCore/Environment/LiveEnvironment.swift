@@ -20,7 +20,8 @@ public enum LiveEnvironment {
             volumes: LiveVolumeInspector(),
             // Milestone 4: the real runner. It resolves executables only from trusted directories and
             // runs only allow-listed (tool, arguments) pairs, without a shell (Execution/CommandRunner).
-            commands: CommandRunner(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
+            commands: CommandRunner(homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+                                    policy: CommandTrustPolicy(settings: scanSettings)),
             clock: SystemClock(),
             effectiveUserID: geteuid(),
             userID: getuid(),

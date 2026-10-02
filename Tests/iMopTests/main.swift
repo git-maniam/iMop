@@ -41,6 +41,8 @@ struct TestRunner {
         await CommandClientTests.runAll()
         await CommandInspectorTests.runAll()
         await M4ReviewRegressionTests.runAll()
+        // v1.1 owner decision: opt-in "Trust Homebrew tools" (SAFETY.md › Command trust).
+        await HomebrewTrustTests.runAll()
 
         // Milestone 5 — Yellow rules, XcodeInspector, ProjectScanner, AI model rules (spec §6, §13 M5).
         await XcodeInspectorTests.runAll()

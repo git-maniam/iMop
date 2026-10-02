@@ -42,6 +42,11 @@ public struct ScanSettings: Sendable, Codable, Hashable {
     /// Volumes are identified by UUID, not by mount path (two drives can share a name).
     public var lastSeenVolumes: [String]? = nil
 
+    /// Settings → "Trust Homebrew tools" (OFF by default). When ON, `CommandRunner` also accepts
+    /// Homebrew folders the `admin` group may write to (see `CommandTrustPolicy`).
+    /// SAFETY-DECISION: a missing or unreadable value means OFF.
+    public var trustHomebrewAdminWritableDirectories: Bool = false
+
     public static let defaultArchivesToKeep = 3
     public static let archivesToKeepRange: ClosedRange<Int> = 1...50
 
@@ -57,7 +62,8 @@ public struct ScanSettings: Sendable, Codable, Hashable {
         userExclusions: [String] = [],
         alwaysQuarantine: Bool = true,
         quarantineRetentionOverrideHours: [String: Int] = [:],
-        lastSeenVolumes: [String]? = nil
+        lastSeenVolumes: [String]? = nil,
+        trustHomebrewAdminWritableDirectories: Bool = false
     ) {
         self.projectRoots = projectRoots
         self.archivesToKeep = Self.clampArchivesToKeep(archivesToKeep)
@@ -66,6 +72,7 @@ public struct ScanSettings: Sendable, Codable, Hashable {
         self.alwaysQuarantine = alwaysQuarantine
         self.quarantineRetentionOverrideHours = quarantineRetentionOverrideHours
         self.lastSeenVolumes = lastSeenVolumes
+        self.trustHomebrewAdminWritableDirectories = trustHomebrewAdminWritableDirectories
     }
 
     /// The archives-to-keep value actually used (always inside `archivesToKeepRange`).
@@ -118,7 +125,7 @@ public struct ScanSettings: Sendable, Codable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case projectRoots, archivesToKeep, ageThresholdOverrides, userExclusions, alwaysQuarantine
-        case quarantineRetentionOverrideHours, lastSeenVolumes
+        case quarantineRetentionOverrideHours, lastSeenVolumes, trustHomebrewAdminWritableDirectories
     }
 
     public init(from decoder: any Decoder) throws {
@@ -132,7 +139,9 @@ public struct ScanSettings: Sendable, Codable, Hashable {
             alwaysQuarantine: try c.decodeIfPresent(Bool.self, forKey: .alwaysQuarantine) ?? true,
             quarantineRetentionOverrideHours: try c.decodeIfPresent([String: Int].self, forKey: .quarantineRetentionOverrideHours) ?? [:],
             // SAFETY-DECISION (review M6): a missing key decodes to `nil` ("never recorded").
-            lastSeenVolumes: try c.decodeIfPresent([String].self, forKey: .lastSeenVolumes)
+            lastSeenVolumes: try c.decodeIfPresent([String].self, forKey: .lastSeenVolumes),
+            // SAFETY-DECISION: a missing value decodes to OFF; an unreadable one also means OFF.
+            trustHomebrewAdminWritableDirectories: (try? c.decodeIfPresent(Bool.self, forKey: .trustHomebrewAdminWritableDirectories)) == true
         )
     }
 
@@ -145,5 +154,6 @@ public struct ScanSettings: Sendable, Codable, Hashable {
         try c.encode(alwaysQuarantine, forKey: .alwaysQuarantine)
         try c.encode(quarantineRetentionOverrideHours, forKey: .quarantineRetentionOverrideHours)
         try c.encodeIfPresent(lastSeenVolumes, forKey: .lastSeenVolumes)
+        try c.encode(trustHomebrewAdminWritableDirectories, forKey: .trustHomebrewAdminWritableDirectories)
     }
 }

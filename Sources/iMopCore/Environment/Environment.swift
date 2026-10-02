@@ -198,9 +198,18 @@ public protocol CommandRunning: Sendable {
     /// Legacy form; means `purpose: .readOnly` (see the default implementation below).
     func run(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult
     func run(executable: String, arguments: [String], timeout: TimeInterval, purpose: CommandPurpose) async -> CommandResult
+    /// A user-facing reason why `tool` is unavailable when the user can change it in Settings (e.g. it
+    /// is in a Homebrew folder other accounts can change and "Trust Homebrew tools" is OFF); `nil`
+    /// otherwise. Callers keep their own generic message for `nil`.
+    func unavailableReason(for tool: String) -> String?
+    /// This runner with the user's command trust settings applied (fakes and disabled runners ignore it).
+    func applying(_ policy: CommandTrustPolicy) -> any CommandRunning
 }
 
 extension CommandRunning {
+    public func unavailableReason(for tool: String) -> String? { nil }
+    public func applying(_ policy: CommandTrustPolicy) -> any CommandRunning { self }
+
     /// SAFETY-DECISION: the purpose-less call is always a READ-ONLY request; only an explicit
     /// `.action` may ever run a cleanup command.
     public func run(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult {
@@ -274,7 +283,8 @@ public struct SafeCleanEnvironment: Sendable {
     public let runningApplications: any RunningApplicationsProviding
     public let applications: any ApplicationLocating
     public let volumes: any VolumeInspecting
-    public let commands: any CommandRunning
+    /// Always configured with the trust policy of `scanSettings` (see `with(scanSettings:)`).
+    public private(set) var commands: any CommandRunning
     public let codeSignatures: any CodeSignatureVerifying
     public let clock: any Clock
     public let effectiveUserID: UInt32
@@ -312,7 +322,9 @@ public struct SafeCleanEnvironment: Sendable {
         self.runningApplications = runningApplications
         self.applications = applications
         self.volumes = volumes
-        self.commands = commands
+        // SAFETY-DECISION: the runner always follows the settings' command trust policy, so the
+        // opt-in Homebrew relaxation is ON only while the settings say so (default OFF).
+        self.commands = commands.applying(CommandTrustPolicy(settings: scanSettings))
         self.codeSignatures = codeSignatures
         self.clock = clock
         self.effectiveUserID = effectiveUserID
@@ -325,6 +337,7 @@ public struct SafeCleanEnvironment: Sendable {
     public func with(scanSettings: ScanSettings) -> SafeCleanEnvironment {
         var copy = self
         copy.scanSettings = scanSettings
+        copy.commands = commands.applying(CommandTrustPolicy(settings: scanSettings))
         return copy
     }
 

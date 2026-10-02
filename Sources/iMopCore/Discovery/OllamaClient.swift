@@ -114,8 +114,9 @@ public struct OllamaModelsInspector: Inspector {
         }
         let listing: OllamaClient.Listing
         switch await OllamaClient(environment: environment).list() {
-        case .failure(.toolMissing):
-            return InspectorOutput(candidates: [], status: .unavailable("Ollama is not installed"))
+        case .failure(.toolMissing(let why)):
+            return InspectorOutput(candidates: [], status: .unavailable(
+                CommandTrustPolicy.isHomebrewTrustRequiredMessage(why) ? why : "Ollama is not installed"))
         case .failure(.failed(let reason)):
             // `ollama list` needs the Ollama app / server; iMop never starts it.
             return InspectorOutput(candidates: [], status: .unavailable("Ollama is not running or did not answer (\(reason))"))

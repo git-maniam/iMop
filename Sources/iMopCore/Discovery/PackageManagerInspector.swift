@@ -102,7 +102,7 @@ public struct PackageManagerCachesInspector: Inspector {
 
     private func cache(_ spec: CacheSpec, tool: String, environment: SafeCleanEnvironment) async -> InspectorOutput {
         guard let executable = environment.commands.resolveExecutable(tool) else {
-            return Self.unavailable(Self.notInstalled(tool))
+            return Self.unavailable(Self.notInstalled(tool, environment: environment))
         }
 
         if tool == "pod", let problem = Self.customCocoaPodsCacheRoot(environment: environment) {
@@ -184,7 +184,7 @@ public struct PackageManagerCachesInspector: Inspector {
 
     private func homebrew(tool: String, environment: SafeCleanEnvironment) async -> InspectorOutput {
         guard let executable = environment.commands.resolveExecutable(tool) else {
-            return Self.unavailable(Self.notInstalled(tool))
+            return Self.unavailable(Self.notInstalled(tool, environment: environment))
         }
         let result = await environment.commands.run(executable: executable, arguments: ["cleanup", "--prune=all", "-n"],
                                                     timeout: Self.brewDryRunTimeout, purpose: .readOnly)
@@ -306,7 +306,8 @@ public struct PackageManagerCachesInspector: Inspector {
             } else {
                 // Spec §6.2: "CMD avdmanager delete avd -n <name> if available, else ADV".
                 let reason = executable == nil
-                    ? "avdmanager was not found in a trusted location, so iMop cannot remove this device."
+                    ? (environment.commands.unavailableReason(for: tool).map { $0 + " Until then, iMop cannot remove this device." }
+                        ?? "avdmanager was not found in a trusted location, so iMop cannot remove this device.")
                     : "iMop could not confirm which folder avdmanager would delete for this device (\(mismatch ?? "unknown")), so it does not offer to remove it."
                 candidates.append(DiscoveredCandidate(
                     advisoryPath: entry.path,
@@ -381,6 +382,12 @@ public struct PackageManagerCachesInspector: Inspector {
 
     static func notInstalled(_ tool: String) -> String {
         "\(tool) is not installed in a trusted location"
+    }
+
+    /// The runner's specific reason when it has one (e.g. "Trust Homebrew tools" is OFF), else the
+    /// generic `notInstalled(_:)`.
+    static func notInstalled(_ tool: String, environment: SafeCleanEnvironment) -> String {
+        environment.commands.unavailableReason(for: tool) ?? notInstalled(tool)
     }
 
     /// Spec §5.3 wording for whole-cache commands.

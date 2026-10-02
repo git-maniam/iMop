@@ -8,6 +8,8 @@ import Foundation
 ///   and not group/world-writable; every symlink is owned by the user or root; the final file is a
 ///   regular, executable file owned by the user or root and not group/world-writable; its real path
 ///   is inside a trusted root; and when it is a `#!` script its interpreter passes the same checks.
+///   The only exception is opt-in (Settings → "Trust Homebrew tools", OFF by default): see
+///   `isTrustedHomebrewDirectory`.
 /// - `Process` is started with the ABSOLUTE, fully resolved executable path and an ARGUMENT ARRAY.
 ///   There is no shell, no shell flag, no C-library shell helpers, no privilege escalation.
 /// - Every invocation must exactly match an entry of `CommandAllowList` for its purpose.
@@ -80,9 +82,16 @@ public struct CommandRunner: CommandRunning {
     /// Tool → the only path it may be resolved from (`systemToolPaths` in production; empty for the
     /// fixture runner unless a test passes its own table).
     let exactToolPaths: [String: String]
+    /// The user's trust settings (see `CommandTrustPolicy`); `.strict` unless the user opted in.
+    private(set) var policy: CommandTrustPolicy
+    /// Canonical Homebrew prefixes the opt-in relaxation may apply to (`standardHomebrewPrefixes` in
+    /// production; empty for the fixture runner unless a test passes its own).
+    let homebrewPrefixes: [String]
+    /// The `admin` group's id; `nil` (lookup failed) disables the relaxation.
+    let adminGroupID: gid_t?
 
     /// Production runner for the user whose home is `homeDirectory`.
-    public init(homeDirectory: URL) {
+    public init(homeDirectory: URL, policy: CommandTrustPolicy = .strict) {
         let home = Self.cleanHome(homeDirectory)
         self.init(home: home,
                   searchDirectories: Self.standardSearchDirectories(home: home),
@@ -91,7 +100,10 @@ public struct CommandRunner: CommandRunning {
                   userID: getuid(),
                   grace: Self.terminationGrace,
                   captureLimit: Self.outputLimit,
-                  exactToolPaths: Self.systemToolPaths)
+                  exactToolPaths: Self.systemToolPaths,
+                  policy: policy,
+                  homebrewPrefixes: CommandTrustPolicy.standardHomebrewPrefixes,
+                  adminGroupID: CommandTrustPolicy.lookUpAdminGroupID())
     }
 
     /// Test-only runner: custom trusted directories and allow-list so fixtures can run fake
@@ -99,18 +111,27 @@ public struct CommandRunner: CommandRunning {
     ///
     /// `userID` lets a test simulate "owned by another user" (a non-root process cannot chown a
     /// fixture file to another uid): files owned by the real uid then count as someone else's.
+    /// `homebrewPrefixes` / `adminGroupID` stand in for the Homebrew prefixes and the `admin` group
+    /// (a test user cannot `chgrp admin`, so tests use their own primary group); `nil` simulates a
+    /// failed `admin` lookup.
     @_spi(FixtureTesting)
     public init(homeDirectory: URL, searchDirectories: [SearchDirectory], trustedRoots: [String],
                 allowList: CommandAllowList, terminationGrace: TimeInterval = CommandRunner.terminationGrace,
                 outputLimit: Int = CommandRunner.outputLimit, userID: uid_t = getuid(),
-                exactToolPaths: [String: String] = [:]) {
+                exactToolPaths: [String: String] = [:], policy: CommandTrustPolicy = .strict,
+                homebrewPrefixes: [String] = [], adminGroupID: gid_t? = nil) {
         self.init(home: Self.cleanHome(homeDirectory), searchDirectories: searchDirectories, trustedRoots: trustedRoots,
                   allowList: allowList, userID: userID, grace: terminationGrace, captureLimit: outputLimit,
-                  exactToolPaths: exactToolPaths)
+                  exactToolPaths: exactToolPaths, policy: policy, homebrewPrefixes: homebrewPrefixes,
+                  adminGroupID: adminGroupID)
     }
 
     private init(home: String, searchDirectories: [SearchDirectory], trustedRoots: [String], allowList: CommandAllowList,
-                 userID: uid_t, grace: TimeInterval, captureLimit: Int, exactToolPaths: [String: String]) {
+                 userID: uid_t, grace: TimeInterval, captureLimit: Int, exactToolPaths: [String: String],
+                 policy: CommandTrustPolicy, homebrewPrefixes: [String], adminGroupID: gid_t?) {
+        self.policy = policy
+        self.homebrewPrefixes = homebrewPrefixes
+        self.adminGroupID = adminGroupID
         self.homePath = home
         self.searchDirectories = searchDirectories
         self.trustedRoots = trustedRoots
@@ -162,6 +183,26 @@ public struct CommandRunner: CommandRunning {
 
     public func resolveExecutable(_ tool: String) -> String? {
         verifiedResolution(tool)?.candidate
+    }
+
+    /// This runner with `policy` (the user's current trust settings). Everything else is kept.
+    public func applying(_ policy: CommandTrustPolicy) -> any CommandRunning {
+        var copy = self
+        copy.policy = policy
+        return copy
+    }
+
+    /// Why `tool` is unavailable when the user can change that: it exists and would pass every check,
+    /// but only with "Trust Homebrew tools" ON (it is in, or depends on, a Homebrew folder the `admin`
+    /// group may write to). `nil` in every other case (resolves, missing, or refused for another reason).
+    public func unavailableReason(for tool: String) -> String? {
+        guard !policy.trustsHomebrewAdminWritableDirectories, adminGroupID != nil, !homebrewPrefixes.isEmpty,
+              verifiedResolution(tool) == nil else { return nil }
+        var relaxed = self
+        relaxed.policy.trustsHomebrewAdminWritableDirectories = true
+        guard let found = relaxed.verifiedResolution(tool) else { return nil }
+        return CommandTrustPolicy.homebrewTrustRequiredMessage(
+            tool: tool, folder: (found.candidate as NSString).deletingLastPathComponent)
     }
 
     func verifiedResolution(_ tool: String) -> VerifiedExecutable? {
@@ -230,11 +271,12 @@ public struct CommandRunner: CommandRunning {
     /// Like `realpath(3)`, but returns `nil` unless every directory traversed (including "/" and every
     /// directory a symlink is read from) is owned by the user or root and not group/world-writable,
     /// and every symlink is owned by the user or root. The sticky, world-writable `/tmp` does NOT
-    /// qualify. Returns the resolved path and the `lstat` of its final component.
+    /// qualify. (Opt-in exception for Homebrew folders: `isTrustedHomebrewDirectory`.) Returns the
+    /// resolved path and the `lstat` of its final component.
     func secureResolve(_ path: String) -> (path: String, info: Darwin.stat)? {
         guard path.hasPrefix("/"), !path.utf8.contains(0) else { return nil }
         var root = Darwin.stat()
-        guard Darwin.lstat("/", &root) == 0, isSafeDirectory(root) else { return nil }
+        guard Darwin.lstat("/", &root) == 0, isSafeDirectory(root, path: "/") else { return nil }
         var pending = Array(path.split(separator: "/").map(String.init).reversed())
         var current = "/"
         var currentInfo = root
@@ -248,7 +290,7 @@ public struct CommandRunner: CommandRunning {
                 continue
             }
             // `current` must be a safe directory to look inside it.
-            guard (currentInfo.st_mode & S_IFMT) == S_IFDIR, isSafeDirectory(currentInfo) else { return nil }
+            guard (currentInfo.st_mode & S_IFMT) == S_IFDIR, isSafeDirectory(currentInfo, path: current) else { return nil }
             let next = current == "/" ? "/" + component : current + "/" + component
             var info = Darwin.stat()
             guard Darwin.lstat(next, &info) == 0 else { return nil }
@@ -272,7 +314,7 @@ public struct CommandRunner: CommandRunning {
             }
         }
         // Ended on a directory: it must be safe too.
-        guard (currentInfo.st_mode & S_IFMT) == S_IFDIR, isSafeDirectory(currentInfo) else { return nil }
+        guard (currentInfo.st_mode & S_IFMT) == S_IFDIR, isSafeDirectory(currentInfo, path: current) else { return nil }
         return (current, currentInfo)
     }
 
@@ -285,10 +327,33 @@ public struct CommandRunner: CommandRunning {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    private func isSafeDirectory(_ info: Darwin.stat) -> Bool {
+    private func isSafeDirectory(_ info: Darwin.stat, path: String) -> Bool {
         guard (info.st_mode & S_IFMT) == S_IFDIR else { return false }
         guard info.st_uid == userID || info.st_uid == 0 else { return false }
-        return (info.st_mode & (S_IWGRP | S_IWOTH)) == 0
+        if (info.st_mode & (S_IWGRP | S_IWOTH)) == 0 { return true }
+        return isTrustedHomebrewDirectory(info, path: path)
+    }
+
+    /// The opt-in relaxation (Settings → "Trust Homebrew tools", OFF by default). A group-writable
+    /// DIRECTORY (never a file, never a symlink) on the way to an executable, a `#!` interpreter or a
+    /// PATH directory is accepted only when ALL of these hold:
+    /// - the setting is ON and the `admin` group's id could be determined;
+    /// - `path` (the physical path reached component by component, symlinks already followed) is
+    ///   inside or equal to one of `homebrewPrefixes`, compared component-wise and case-sensitively;
+    /// - its owner is the current user;
+    /// - its group is exactly the `admin` group;
+    /// - it is NOT world-writable (`S_IWOTH` is never accepted; the sticky bit changes nothing).
+    ///
+    /// SAFETY-DECISION: the folder's owner must be the current user — not root, not anyone else. That
+    /// is how Homebrew installs itself (owner decision "option B": only folders YOU own); a root-owned
+    /// admin-writable folder is not a standard Homebrew folder and stays refused. Files and symlinks
+    /// are never relaxed (a file must still be owned by the user or root and not group/world-writable).
+    private func isTrustedHomebrewDirectory(_ info: Darwin.stat, path: String) -> Bool {
+        guard policy.trustsHomebrewAdminWritableDirectories, let adminGroupID else { return false }
+        guard (info.st_mode & S_IFMT) == S_IFDIR else { return false }
+        guard (info.st_mode & S_IWOTH) == 0 else { return false }
+        guard info.st_uid == userID, info.st_gid == adminGroupID else { return false }
+        return homebrewPrefixes.contains { Self.isInside(path, root: $0) }
     }
 
     /// `true` when `path` is not a `#!` script, or when its interpreter passes every check.
@@ -382,7 +447,8 @@ public struct CommandRunner: CommandRunning {
 
     /// SAFETY-DECISION (review M4): the child's PATH lists only the trusted search directories that
     /// pass the directory checks NOW (every directory on the way owned by the user or root, none
-    /// group/world-writable — e.g. a 0775 `/opt/homebrew/bin` is left out), followed by the
+    /// group/world-writable — e.g. a 0775 `/opt/homebrew/bin` is left out unless "Trust Homebrew
+    /// tools" is ON and it passes `isTrustedHomebrewDirectory`), followed by the
     /// SIP-protected `/usr/bin` and `/bin`. A directory whose contents `resolveExecutable` would refuse
     /// is never on PATH, so neither `env` nor a vendor tool can pick a program from it.
     @_spi(FixtureTesting)

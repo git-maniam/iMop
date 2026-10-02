@@ -590,7 +590,8 @@ public actor Executor {
             return .skipped(rejection)
         }
         guard let executable = environment.commands.resolveExecutable(spec.tool) else {
-            let message = "\(spec.tool) was not found in a trusted location"
+            let message = environment.commands.unavailableReason(for: spec.tool)
+                ?? "\(spec.tool) was not found in a trusted location"
             await audit(runID, item: item, action: actionName, verdict: "failed", rejectionReason: message)
             return .failed(.safetyRejected("untrusted or missing executable"), message: message)
         }

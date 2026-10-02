@@ -484,6 +484,18 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
         executables[tool]
     }
 
+    private var _unavailableReasons: [String: String] = [:]
+
+    /// Tool → the specific reason `unavailableReason(for:)` gives (e.g. "Trust Homebrew tools" is OFF).
+    var unavailableReasons: [String: String] {
+        get { lock.lock(); defer { lock.unlock() }; return _unavailableReasons }
+        set { lock.lock(); _unavailableReasons = newValue; lock.unlock() }
+    }
+
+    func unavailableReason(for tool: String) -> String? {
+        executables[tool] == nil ? unavailableReasons[tool] : nil
+    }
+
     /// The purpose-less form means `.readOnly` (same as the protocol default).
     func run(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult {
         record(Invocation(executable: executable, arguments: arguments, timeout: timeout, purpose: .readOnly))

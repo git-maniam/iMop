@@ -233,6 +233,11 @@ private struct LenientScanSettings: Decodable {
         if let retention = value([String: Int].self, "quarantineRetentionOverrideHours", "retention") {
             settings.quarantineRetentionOverrideHours = retention
         }
+        // SAFETY-DECISION: "Trust Homebrew tools" is ON only for a readable `true`; absence → OFF,
+        // anything unreadable → OFF (and reported, which pauses cleaning until Settings are checked).
+        if let trust = value(Bool.self, "trustHomebrewAdminWritableDirectories", "Trust Homebrew tools") {
+            settings.trustHomebrewAdminWritableDirectories = trust
+        }
         // SAFETY-DECISION (review M6): explicit null, absence, or any unreadable entry → `nil` ("never
         // recorded"), which pauses orphan detection until a scan records the connected drives again.
         let volumesKey = Key("lastSeenVolumes")

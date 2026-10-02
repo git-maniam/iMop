@@ -31,7 +31,8 @@ enum CommandDiscovery {
     static func readOnly(_ tool: String, _ arguments: [String], timeout: TimeInterval,
                          environment: SafeCleanEnvironment) async -> Result<String, Failure> {
         guard let executable = environment.commands.resolveExecutable(tool) else {
-            return .failure(.toolMissing("\(tool) was not found in a trusted location"))
+            return .failure(.toolMissing(environment.commands.unavailableReason(for: tool)
+                ?? "\(tool) was not found in a trusted location"))
         }
         let result = await environment.commands.run(executable: executable, arguments: arguments,
                                                     timeout: timeout, purpose: .readOnly)

@@ -81,9 +81,12 @@ v1.1 replaces the v1.0 scanner and deletion code with **SafeClean**:
   again immediately before it is acted on.
 - **Vendor cleanup commands.** For tools such as npm, Docker or the iOS Simulator, iMop runs the
   tool's own cleanup command (exact, allow-listed argument arrays, never a shell). Tools in a folder
-  that other users can write to are not run yet — this includes a default Homebrew install
-  (`/opt/homebrew/bin` is group-writable), so Homebrew and Homebrew-installed tools are reported as
-  unavailable (see [SAFETY.md › Spec deviations](SAFETY.md#spec-deviations)).
+  that other accounts can change are not run. A default Homebrew install is such a folder
+  (`/opt/homebrew/bin` and its other folders can be changed by every account in the `admin` group), so
+  by default Homebrew and Homebrew-installed tools (brew, npm, yarn, pnpm, go, uv, pod, flutter, ...)
+  are reported as unavailable, with the reason. You can allow them with Settings › **Trust Homebrew
+  tools** (off by default; see [Settings](#settings) and
+  [SAFETY.md › Vendor commands](SAFETY.md#vendor-commands-allow-list-and-runner)).
 - **Honest sizes.** Sizes are allocated bytes on disk. "Estimated reclaimable" counts only blocks that
   would really be freed (APFS clones and hard links are taken into account). After a clean, iMop
   compares the estimate with the measured free-space change and explains any difference.
@@ -214,6 +217,15 @@ scan; a plan built with different settings must be rebuilt before it can be conf
 - **Always quarantine (never permanently delete in one step):** ON by default. While it is on, iMop
   never offers a one-step permanent deletion (for example emptying the Trash or removing crash memory
   dumps); those items show as blocked with this reason. Turning it off asks for confirmation.
+- **Trust Homebrew tools in /opt/homebrew** (`/usr/local` on Intel): OFF by default. Homebrew makes
+  its folders changeable by every account in the `admin` group, so iMop does not run Homebrew tools
+  until you turn this on; their rules show "… a folder other accounts can change. Turn on “Trust
+  Homebrew tools” in Settings to allow it." When you turn it on, iMop first lists the other accounts
+  that could change those tools (members of the `admin` group, not counting you and root) and asks you
+  to confirm with **Trust Homebrew Tools** (Cancel is the default). Even when on, iMop accepts only
+  Homebrew's own folders, owned by you, with group `admin`, and never a folder everyone can write to;
+  the tools themselves and every other check stay as strict as before. Turning it off is immediate.
+  Each change is recorded in the audit log.
 - **Forget remembered drives:** iMop remembers which external drives it has seen. While a remembered
   drive is disconnected, Leftovers detection pauses (apps on that drive would look deleted).
 
@@ -237,6 +249,8 @@ have checked Settings and confirmed them.
   prompt), that rule is not scanned again until you quit and reopen iMop, and it shows as
   "Unavailable this session". (For sandboxed app caches this is per rule: when only some app
   containers are refused, the refused ones are skipped in each scan.)
+- Vendor tools that iMop does not trust are listed under **Unavailable this session** with the reason,
+  for example a Homebrew tool while **Trust Homebrew tools** is off (see [Settings](#settings)).
 
 ### About
 
@@ -329,13 +343,13 @@ Package.swift
 | Folder | Contents |
 |---|---|
 | `Environment/` | `SafeCleanEnvironment`: everything injectable (home folder, clock, file-system probe, processes, running apps, volumes, Spotlight, code-signing, command runner, settings). `LiveEnvironment.make()` builds the real one. |
-| `Settings/` | `ScanSettings` (project roots, exclusions, retention and age overrides, archives to keep, `alwaysQuarantine`, remembered volumes) and `SettingsStore` (JSON in the `com.imop.cleaner` defaults domain; unreadable data falls back to safe defaults). |
+| `Settings/` | `ScanSettings` (project roots, exclusions, retention and age overrides, archives to keep, `alwaysQuarantine`, remembered volumes, `trustHomebrewAdminWritableDirectories`) and `SettingsStore` (JSON in the `com.imop.cleaner` defaults domain; unreadable data falls back to safe defaults). |
 | `Safety/` | `PathCanonicalizer`, `DenyList`, `SafetyGate`, `SafetyRejection`, `Preconditions`. The heart of the app; read [SAFETY.md](SAFETY.md) first. |
 | `Rules/` | `Rule` model, strict `RuleCoding`, `Glob` (the tiny glob grammar), `RuleCatalog` (load + validation + Swift-pinned rule shapes), `RuleTargetMatcher` (what each rule may target), `CommandAllowList`, and the bundled `Rules.json`. |
 | `Discovery/` | `SafeCleanScanner` (read-only scan, at most 4 rules at a time, progress events) and the inspectors: Xcode, Simulator (`SimctlClient`), Docker, Ollama, package managers, ProjectScanner, app caches, JetBrains, VS Code extensions, media, Trash flows, `OrphanDetector`, LaunchAgents, Advisory. |
 | `Sizing/` | `SizeCalculator`: allocated and private (APFS) size via `getattrlistbulk`, hard-link handling, protected-descendant detection. |
 | `Planning/` | `PlanBuilder`, `CleanupPlan`, `PlanItem`, `ConfirmedPlan` (SHA-256 sealed, built only from a plan plus `UserConfirmation`). |
-| `Execution/` | `Executor` (actor; only entry point `execute(_ ConfirmedPlan)`), `Quarantine`, `Trash`, `CommandRunner`, `MutationPolicy`, `SecureFS`. The only code that may change the file system. |
+| `Execution/` | `Executor` (actor; only entry point `execute(_ ConfirmedPlan)`), `Quarantine`, `Trash`, `CommandRunner` (with `CommandTrustPolicy` / `AdminGroupMembers` for the opt-in "Trust Homebrew tools"), `MutationPolicy`, `SecureFS`. The only code that may change the file system. |
 | `Audit/` | `AuditLog` (JSONL, export). |
 | `Permissions/` | `FullDiskAccessProbe`, `AppManagementProbe` and their System Settings deep links. |
 | `ViewModels/` | `AppState`: the `@MainActor @Observable` state the UI binds to (scan, selection, review, execution, quarantine, settings, permissions). All file-system work runs off the main thread. |

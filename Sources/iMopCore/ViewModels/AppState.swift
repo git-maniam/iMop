@@ -1261,6 +1261,42 @@ public final class AppState {
         settings = updated
     }
 
+    /// Settings → "Trust Homebrew tools" (OFF by default). The UI shows `homebrewTrustDisclosure()`
+    /// and asks for confirmation before turning it ON; turning it OFF needs no confirmation.
+    /// `disclosedAccounts` is what the confirmation showed (`nil` = could not be determined); it is
+    /// recorded in the audit log with the change. Applies from the next scan: a plan built with the
+    /// other value is outdated (`planIsOutdated`) and refused by `confirmAndClean`.
+    public func setTrustHomebrewTools(_ enabled: Bool, disclosedAccounts: [String]?) {
+        guard storedSettings.trustHomebrewAdminWritableDirectories != enabled else { return }
+        var updated = storedSettings
+        updated.trustHomebrewAdminWritableDirectories = enabled
+        settings = updated
+        let accounts: String
+        if let disclosedAccounts {
+            accounts = disclosedAccounts.isEmpty ? "none besides you and root" : disclosedAccounts.joined(separator: ", ")
+        } else {
+            accounts = "could not be determined"
+        }
+        let event = AuditEvent(timestamp: baseEnvironment.clock.now, action: Self.trustHomebrewAuditAction,
+                               verdict: enabled ? "enabled" : "disabled",
+                               detail: "Trust Homebrew tools turned \(enabled ? "on" : "off"). "
+                                   + "Other accounts in the admin group: \(accounts).")
+        let audit = self.auditLog
+        track { await audit.record(event) }
+    }
+
+    /// Audit action of a "Trust Homebrew tools" change.
+    public static let trustHomebrewAuditAction = "settings.trustHomebrewTools"
+
+    /// Accounts other than the user (and root) that could change Homebrew tools if "Trust Homebrew
+    /// tools" is turned on (members of the `admin` group); `nil` when this cannot be determined.
+    public nonisolated func homebrewTrustDisclosure() -> [String]? {
+        AdminGroupMembers.current()
+    }
+
+    /// Where Homebrew lives on this Mac (for the Settings text).
+    public nonisolated var homebrewLocation: String { CommandTrustPolicy.homebrewLocationDescription }
+
     /// Settings → "Forget remembered drives".
     // SAFETY-DECISION: `nil` means "never recorded", which pauses the OrphanDetector until the next scan
     // records the connected drives again (see `ScanSettings.lastSeenVolumes`).

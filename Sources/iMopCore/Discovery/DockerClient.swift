@@ -335,7 +335,7 @@ public struct DockerSystemInspector: Inspector {
 
     static func status(for failure: CommandDiscovery.Failure) -> String {
         switch failure {
-        case .toolMissing: return "Docker is not installed"
+        case .toolMissing(let why): return CommandTrustPolicy.isHomebrewTrustRequiredMessage(why) ? why : "Docker is not installed"
         // SAFETY-DECISION: iMop never starts Docker; an unreachable daemon simply skips the rule.
         case .failed(let reason): return "Docker is not running or did not answer (\(reason)). iMop never starts Docker."
         }
