@@ -86,18 +86,6 @@ public struct ScanSettings: Sendable, Codable, Hashable {
 
     // MARK: - Volumes (spec §6.9 condition 8)
 
-    /// The previously seen volumes that are NOT in `mounted` (compared exactly, as listed), or `nil`
-    /// when the mounted volumes could not be listed. An empty array means every volume seen by the
-    /// last scan is connected.
-    ///
-    /// SAFETY-DECISION: membership, not just a count: one drive swapped for another (same count)
-    /// still reports the missing drive.
-    public func disconnectedVolumes(mounted: [String]?) -> [String]? {
-        guard let mounted else { return nil }
-        let current = Set(mounted)
-        return Self.normalizedVolumes(lastSeenVolumes).filter { !current.contains($0) }
-    }
-
     /// The value to store in `lastSeenVolumes` after a scan that saw `mounted`.
     ///
     /// SAFETY-DECISION: a volume that was seen before but is not connected now is REMEMBERED (it may

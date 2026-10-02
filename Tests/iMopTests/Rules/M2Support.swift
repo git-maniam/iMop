@@ -14,8 +14,9 @@ enum M2 {
     static var coreSourcesPath: String { repoRoot + "/Sources/iMopCore" }
     static var sourceRulesJSONPath: String { coreSourcesPath + "/Rules/Rules.json" }
 
-    /// Every rule Rules.json ships: the Milestone 2 Green file rules plus the Milestone 4 vendor-command rules.
-    static var expectedBundledRuleIDs: Set<String> { m2GreenRuleIDs.union(m4CommandRuleIDs).union(m5RuleIDs) }
+    /// Every rule Rules.json ships: the Milestone 2 Green file rules, the Milestone 4 vendor-command
+    /// rules, the Milestone 5 Yellow rules and the Milestone 6 Red / Trash / Advisory rules.
+    static var expectedBundledRuleIDs: Set<String> { m2GreenRuleIDs.union(m4CommandRuleIDs).union(m5RuleIDs).union(M6.ruleIDs) }
 
     /// Milestone 5: the Yellow rules, Xcode/JetBrains inspectors, ProjectScanner and AI model rules
     /// (spec §6.1–6.3, §6.5–6.7) with their tiers. Only the two "orphaned" rules are Green.

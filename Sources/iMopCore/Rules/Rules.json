@@ -2191,6 +2191,383 @@
         "notOpenByAnyProcess"
       ],
       "action": "quarantine"
+    },
+    {
+      "id": "leftovers.appData",
+      "category": "leftovers",
+      "tier": "red",
+      "title": "Leftover data of deleted apps",
+      "explanation": "Settings, support files, caches and containers that apps you have deleted left in your Library folder. A folder is only offered when ALL of these hold: it is not Apple's; no app with that identifier is registered with macOS or found by Spotlight on any connected drive; nothing related is running; no installer receipt refers to it; it is not a known tool folder; it has not been used for 30 days; and no drive that may hold apps is disconnected. Each item goes to the Trash only after you confirm it.",
+      "whatYouLose": "Whatever the deleted app stored there: its settings, saved data, caches and, for containers, possibly documents you created inside that app. If you reinstall the app, it starts as if new. The item is moved to the Trash, so you can put it back until you empty the Trash.",
+      "howItRegenerates": "Not regenerated. If you reinstall the app, it creates fresh, empty data. To get the old data back, restore it from the Trash before you empty it.",
+      "discovery": {
+        "inspector": "orphanedAppData"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support",
+        "{HOME}/Library/Preferences",
+        "{HOME}/Library/Containers",
+        "{HOME}/Library/Group Containers",
+        "{HOME}/Library/Caches",
+        "{HOME}/Library/WebKit"
+      ],
+      "preconditions": [
+        "owningAppNotRunning",
+        {
+          "olderThan": 30
+        },
+        "notOpenByAnyProcess",
+        "stillOrphaned"
+      ],
+      "action": "trash"
+    },
+    {
+      "id": "leftovers.launchAgents",
+      "category": "leftovers",
+      "tier": "red",
+      "title": "Broken login items (LaunchAgents) of deleted apps",
+      "explanation": "Background helpers in your own Library/LaunchAgents folder whose program no longer exists, usually left behind by an app you deleted. Each one shows its label and the missing program. iMop first asks launchd to unload it (launchctl bootout) and then moves its file to the Trash, one item at a time after you confirm it. Apple's agents and the system folders /Library/LaunchAgents and /Library/LaunchDaemons are never touched.",
+      "whatYouLose": "Nothing that still works: the program the helper would start is already gone. Unloading it cannot be undone from the Trash; if you put the file back, it is loaded again the next time you log in.",
+      "howItRegenerates": "Not regenerated. Reinstalling the app that owned it usually installs its helper again.",
+      "discovery": {
+        "inspector": "orphanedLaunchAgents"
+      },
+      "allowRoots": [
+        "{HOME}/Library/LaunchAgents"
+      ],
+      "preconditions": [
+        "notOpenByAnyProcess"
+      ],
+      "action": "bootoutAndTrash"
+    },
+    {
+      "id": "xcode.extraInstalls",
+      "category": "developer",
+      "tier": "red",
+      "title": "Additional copies of Xcode",
+      "explanation": "Extra Xcode apps (for example older versions or betas) in /Applications or your own Applications folder. The Xcode selected for command-line builds (xcode-select) is never offered, and only copies validly signed by Apple are. Moving an app to the Trash needs the App Management permission.",
+      "whatYouLose": "That version of Xcode, including its SDKs and the simulator runtimes bundled inside it. Projects that need this exact version cannot be built with it until you reinstall it. The app is moved to the Trash, so you can put it back until you empty the Trash.",
+      "howItRegenerates": "Not regenerated. Download that Xcode version again from the App Store or the Apple Developer website if you need it.",
+      "discovery": {
+        "inspector": "xcodeExtraInstalls"
+      },
+      "allowRoots": [
+        "/Applications",
+        "{HOME}/Applications"
+      ],
+      "preconditions": [
+        "appleSigned",
+        "notSelectedXcode",
+        {
+          "appNotRunning": [
+            "com.apple.dt.Xcode"
+          ]
+        }
+      ],
+      "action": "trash"
+    },
+    {
+      "id": "installers.macOS",
+      "category": "apps",
+      "tier": "yellow",
+      "title": "macOS installer apps",
+      "explanation": "\"Install macOS …\" apps in /Applications. They are only needed to install or reinstall that version of macOS; macOS itself does not use them. Only installers validly signed by Apple are offered, never while one is running. Moving an app to the Trash needs the App Management permission.",
+      "whatYouLose": "The installer. To install that macOS version again (or to make a bootable installer), you have to download it again, which is usually more than 12 GB. The app is moved to the Trash, so you can put it back until you empty the Trash.",
+      "howItRegenerates": "Not regenerated; download the installer again from the App Store or Software Update if you need it.",
+      "discovery": {
+        "inspector": "macOSInstallers"
+      },
+      "allowRoots": [
+        "/Applications"
+      ],
+      "preconditions": [
+        "appleSigned",
+        {
+          "appNotRunning": [
+            "com.apple.InstallAssistant.*"
+          ]
+        }
+      ],
+      "action": "trash"
+    },
+    {
+      "id": "jetbrains.config.orphanedVersion",
+      "category": "developer",
+      "tier": "red",
+      "title": "JetBrains settings of removed IDE versions",
+      "explanation": "The configuration folder of JetBrains IDE versions (IntelliJ IDEA, PyCharm, WebStorm, …) that are no longer installed. These folders contain IDE settings: keymaps, code styles, plugins, live templates and other preferences. Folders of unknown products, or whose installed versions cannot be determined, are never offered.",
+      "whatYouLose": "The IDE settings of that version (keymaps, code styles, installed plugins, templates and other preferences). A newer version usually imported them when it was first started, but anything you changed only in the old version is lost once you empty the Trash. The folder is moved to the Trash, so you can put it back until then.",
+      "howItRegenerates": "Not regenerated. Reinstalling that version starts with default settings unless you restore the folder from the Trash.",
+      "discovery": {
+        "inspector": "jetbrainsConfig"
+      },
+      "allowRoots": [
+        "{HOME}/Library/Application Support/JetBrains"
+      ],
+      "preconditions": [
+        {
+          "appNotRunning": [
+            "com.jetbrains.*"
+          ]
+        }
+      ],
+      "action": "trash"
+    },
+    {
+      "id": "downloads.diskImages",
+      "category": "downloads",
+      "tier": "yellow",
+      "title": "Old disk images and installer packages in Downloads",
+      "explanation": "Disk images (.dmg) and installer packages (.pkg, .mpkg) in your Downloads folder that you have not used for 30 days. Once an app is installed, its download is usually no longer needed. Mounted disk images and files that are open are never offered.",
+      "whatYouLose": "The downloaded file. To install that software again you have to download it again. The file is moved to the Trash, so you can put it back until you empty the Trash.",
+      "howItRegenerates": "Not regenerated; download it again from where you got it if you need it.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Downloads/*.dmg",
+          "{HOME}/Downloads/*.pkg",
+          "{HOME}/Downloads/*.mpkg"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Downloads"
+      ],
+      "preconditions": [
+        {
+          "olderThan": 30
+        },
+        "notMounted",
+        "notOpenByAnyProcess"
+      ],
+      "action": "trash"
+    },
+    {
+      "id": "downloads.archives",
+      "category": "downloads",
+      "tier": "red",
+      "title": "Old archives in Downloads",
+      "explanation": "Archives (.zip, .tar.gz) and disc images (.iso) in your Downloads folder that you have not used for 30 days. Archives often contain your own files, so each one goes to the Trash only after you confirm it. Mounted images and files that are open are never offered.",
+      "whatYouLose": "The archive and everything inside it that you have not extracted elsewhere. The file is moved to the Trash, so you can put it back until you empty the Trash.",
+      "howItRegenerates": "Not regenerated. If you downloaded it, download it again; if it held your own files, only the Trash (or a backup) can bring it back.",
+      "discovery": {
+        "glob": [
+          "{HOME}/Downloads/*.zip",
+          "{HOME}/Downloads/*.iso",
+          "{HOME}/Downloads/*.tar.gz"
+        ]
+      },
+      "allowRoots": [
+        "{HOME}/Downloads"
+      ],
+      "preconditions": [
+        {
+          "olderThan": 30
+        },
+        "notMounted",
+        "notOpenByAnyProcess"
+      ],
+      "action": "trash"
+    },
+    {
+      "id": "trash.empty",
+      "category": "system",
+      "tier": "yellow",
+      "title": "Items in the Trash",
+      "explanation": "Everything currently in your Trash, shown with the number of items and their size. Space used by the Trash is only freed when it is emptied. This is offered as one \"Empty Trash\" choice and is only available when \"Always quarantine\" is turned off in Settings. Reading the Trash needs Full Disk Access.",
+      "whatYouLose": "Everything in the Trash, permanently. This cannot be undone: items are deleted directly and do not go to Quarantine.",
+      "howItRegenerates": "Nothing comes back. Make sure nothing in the Trash is still needed before emptying it.",
+      "discovery": {
+        "inspector": "trashContents"
+      },
+      "allowRoots": [
+        "{HOME}/.Trash"
+      ],
+      "requiresFullDiskAccess": true,
+      "action": "permanentDelete"
+    },
+    {
+      "id": "system.coreDumps",
+      "category": "system",
+      "tier": "yellow",
+      "title": "Crash memory dumps (core files)",
+      "explanation": "Core files in /cores that macOS wrote when a program you ran crashed with core dumps enabled. They are only useful for debugging that crash and are often very large. Only your own files older than one day are offered. They cannot be quarantined (they are on a different part of the disk), so they are deleted directly, and only when \"Always quarantine\" is turned off in Settings.",
+      "whatYouLose": "The memory snapshot of the crashed program, which a developer could use to debug that crash. This cannot be undone: the file is deleted directly and does not go to Quarantine.",
+      "howItRegenerates": "Not regenerated. A new core file is only written if a program crashes again with core dumps enabled.",
+      "discovery": {
+        "glob": [
+          "/cores/core.*"
+        ]
+      },
+      "allowRoots": [
+        "/cores"
+      ],
+      "preconditions": [
+        "ownedByUser",
+        {
+          "olderThan": 1
+        }
+      ],
+      "action": "permanentDelete"
+    },
+    {
+      "id": "docker.diskImage",
+      "category": "developer",
+      "tier": "advisory",
+      "title": "Docker's virtual disk",
+      "explanation": "Docker Desktop keeps all images, containers and volumes inside one virtual disk file (Docker.raw). Deleting images does not make this file smaller on its own. iMop never touches this file: use Docker Desktop › Settings › Resources to change its size, or the Docker cleanup items above. If you use OrbStack or Colima instead, use their own settings or commands to reclaim space.",
+      "whatYouLose": "Nothing: iMop only shows how big the file is and where to manage it.",
+      "howItRegenerates": "Docker manages this file itself and grows it again as needed.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "openApp"
+      }
+    },
+    {
+      "id": "finalcut.generated",
+      "category": "media",
+      "tier": "advisory",
+      "title": "Final Cut Pro generated files",
+      "explanation": "Final Cut Pro libraries (.fcpbundle) can hold large render, optimized and proxy media that Final Cut can recreate. iMop never looks inside a library. In Final Cut Pro, select the library and choose File › Delete Generated Library Files.",
+      "whatYouLose": "Nothing is removed by iMop. If you delete generated files in Final Cut Pro, it renders them again when needed.",
+      "howItRegenerates": "Final Cut Pro recreates render, optimized and proxy files when you need them.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "instructions"
+      }
+    },
+    {
+      "id": "audio.soundLibraries",
+      "category": "media",
+      "tier": "advisory",
+      "title": "GarageBand and Logic sound libraries",
+      "explanation": "Sound libraries and Apple Loops installed for GarageBand and Logic Pro live in system folders (/Library/Application Support/GarageBand, /Library/Application Support/Logic, /Library/Audio/Apple Loops) that belong to macOS. iMop never changes them. Use the app's own Sound Library manager to remove sound packs you don't need.",
+      "whatYouLose": "Nothing is removed by iMop. Sound packs you remove in the app can be downloaded again from it.",
+      "howItRegenerates": "GarageBand and Logic Pro can download removed sound packs again.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "instructions"
+      }
+    },
+    {
+      "id": "advisory.timeMachineSnapshots",
+      "category": "system",
+      "tier": "advisory",
+      "title": "Time Machine local snapshots",
+      "explanation": "macOS keeps local Time Machine snapshots on your startup disk. They are purgeable: macOS removes them automatically when space is needed and when they expire. While a snapshot exists, space from files you delete may not be returned right away. iMop only counts them (read-only) and never deletes snapshots.",
+      "whatYouLose": "Nothing: snapshots are managed by macOS.",
+      "howItRegenerates": "macOS creates new local snapshots automatically while Time Machine is turned on.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "instructions"
+      }
+    },
+    {
+      "id": "advisory.purgeableSpace",
+      "category": "system",
+      "tier": "advisory",
+      "title": "Purgeable space",
+      "explanation": "macOS reports two kinds of free space: what is free right now, and what is available for important use, which also counts purgeable space (local snapshots, iCloud files that can be downloaded again, caches macOS can remove on its own). iMop shows both values so the difference is clear; macOS frees purgeable space automatically when it is needed.",
+      "whatYouLose": "Nothing: this is information only.",
+      "howItRegenerates": "macOS manages purgeable space itself.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "instructions"
+      }
+    },
+    {
+      "id": "advisory.iosBackups",
+      "category": "system",
+      "tier": "advisory",
+      "title": "iPhone and iPad backups",
+      "explanation": "Backups of your iPhone or iPad stored on this Mac, with the device name, date and size of each (read-only). iMop never deletes backups. To remove one, connect the device, select it in the Finder sidebar and choose Manage Backups. Reading backups needs Full Disk Access.",
+      "whatYouLose": "Nothing is removed by iMop. A backup you delete in Finder cannot be restored to a device.",
+      "howItRegenerates": "A new backup is made the next time you back up the device to this Mac.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "revealInFinder"
+      },
+      "requiresFullDiskAccess": true
+    },
+    {
+      "id": "advisory.systemStorage",
+      "category": "system",
+      "tier": "advisory",
+      "title": "Messages, Photos, Music, Podcasts and TV",
+      "explanation": "Messages attachments, the Photos library, and downloaded music, podcasts and TV shows are managed by their apps. iMop never removes them. Open System Settings › General › Storage to review and remove them safely.",
+      "whatYouLose": "Nothing is removed by iMop.",
+      "howItRegenerates": "These apps manage and download their content themselves.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "openStorageSettings"
+      }
+    },
+    {
+      "id": "advisory.appleIntelligenceAssets",
+      "category": "system",
+      "tier": "advisory",
+      "title": "Apple Intelligence, Siri and dictation assets",
+      "explanation": "Language models and voice assets for Apple Intelligence, Siri and dictation are stored in a system-managed area (/System/Library/AssetsV2). macOS downloads and removes them itself. iMop only explains them and never changes them; turning a feature off in System Settings lets macOS remove its assets.",
+      "whatYouLose": "Nothing is removed by iMop.",
+      "howItRegenerates": "macOS downloads these assets again when the feature is used.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "instructions"
+      }
+    },
+    {
+      "id": "advisory.iCloudDrive",
+      "category": "system",
+      "tier": "advisory",
+      "title": "Local copies of iCloud Drive files",
+      "explanation": "Files in iCloud Drive may also be stored on this Mac. iMop never deletes anything in iCloud Drive, because a deletion there also removes the file from iCloud and your other devices. Turn on Optimize Mac Storage (System Settings › Apple Account › iCloud › Drive) or use Finder's Remove Download to keep files only in iCloud.",
+      "whatYouLose": "Nothing is removed by iMop.",
+      "howItRegenerates": "Files kept only in iCloud are downloaded again when you open them.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "instructions"
+      }
+    },
+    {
+      "id": "advisory.rootOwnedLocations",
+      "category": "system",
+      "tier": "advisory",
+      "title": "System-wide caches and logs",
+      "explanation": "Some caches and logs belong to macOS or to all users (/Library/Caches, /Library/Logs, /Library/Developer/CoreSimulator). iMop never changes files owned by the system and has no privileged helper. Simulator runtimes can be removed with the Simulator items above; the rest is managed by macOS.",
+      "whatYouLose": "Nothing is removed by iMop.",
+      "howItRegenerates": "macOS and the apps that use these folders manage them.",
+      "discovery": {
+        "inspector": "advisory"
+      },
+      "allowRoots": [],
+      "action": {
+        "advisory": "instructions"
+      }
     }
   ]
 }

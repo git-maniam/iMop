@@ -211,8 +211,18 @@ struct M2ReviewRegressionTests {
                     let catalog = try load([json], env)
                     try TestSuite.assertEqual(catalog.rules.count, 0, "case \(index) (\(json["id"] ?? "")) must be disabled")
                 }
-                let good = rule("installers.macOS", "yellow", "trash", ["/Applications/Install macOS *.app"], ["/Applications"],
+                // Milestone 6: the reviewed shape is the macOSInstallers inspector (a glob is refused).
+                var good = rule("installers.macOS", "yellow", "trash", ["/Applications/Install macOS *.app"], ["/Applications"],
                                 ["appleSigned", notRunning])
+                try TestSuite.assertEqual(try load([good], env).rules.count, 0, "the glob form is no longer the reviewed shape")
+                good["discovery"] = ["inspector": "macOSInstallers"]
+                var wrongTier = good
+                wrongTier["tier"] = "green"
+                var missingPrecondition = good
+                missingPrecondition["preconditions"] = ["appleSigned"]
+                for (index, json) in [wrongTier, missingPrecondition].enumerated() {
+                    try TestSuite.assertEqual(try load([json], env).rules.count, 0, "inspector case \(index) must be disabled")
+                }
                 try TestSuite.assertEqual(try load([good], env).rules.map(\.id), ["installers.macOS"],
                                           "\(try load([good], env).disabled)")
             }
@@ -321,7 +331,9 @@ struct M2ReviewRegressionTests {
     /// Cancels the surrounding scan after the other rules have had time to finish.
     struct CancellingInspector: Inspector {
         let holder: TaskHolder
-        var id: InspectorID { .orphanedAppData }
+        // Milestone 6: every pinned inspector id has a real implementation; electronCaches is an
+        // unpinned id the test rule may use.
+        var id: InspectorID { .electronCaches }
         func discover(rule: Rule, environment: SafeCleanEnvironment) async -> InspectorOutput {
             try? await Task.sleep(nanoseconds: 300_000_000)
             holder.cancel()
@@ -364,7 +376,7 @@ struct M2ReviewRegressionTests {
                 let f = env.fixture
                 try f.file("Library/Caches/pip/http/payload.bin", bytes: 1_000)
                 let pip = try bundledRule(env, "pip.cache")
-                let slow = M1.rule(id: "test.slowInspector", discovery: .inspector(.orphanedAppData))
+                let slow = M1.rule(id: "test.slowInspector", discovery: .inspector(.electronCaches))
                 let catalog = RuleCatalog(validating: [pip, slow], environment: env.environment)
                 try TestSuite.assertEqual(catalog.rules.count, 2, "\(catalog.disabled)")
                 let holder = TaskHolder()

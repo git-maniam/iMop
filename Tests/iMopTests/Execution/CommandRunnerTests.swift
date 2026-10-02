@@ -451,8 +451,14 @@ struct CommandRunnerTests {
             for (tool, arguments) in refused {
                 try TestSuite.assertFalse(table.matches(tool: tool, arguments: arguments, purpose: .action), "\(tool) \(arguments)")
             }
-            guard let red = table.actionEntries.first(where: { $0.minimumTier == .red }) else { throw TestError("no Red entry") }
-            try TestSuite.assertEqual(table.actionEntries.filter { $0.minimumTier == .red }.count, 1)
+            // Milestone 6: the second Red action entry is the pinned launchctl bootout (not usable by rules).
+            let redEntries = table.actionEntries.filter { $0.minimumTier == .red }
+            try TestSuite.assertEqual(redEntries.count, 2)
+            let bootout = redEntries.filter { $0.tool == "launchctl" }
+            try TestSuite.assertEqual(bootout.count, 1)
+            try TestSuite.assertFalse(bootout[0].usableByRules)
+            try TestSuite.assertEqual(bootout[0].ruleIDs, ["leftovers.launchAgents"])
+            guard let red = redEntries.first(where: { $0.tool == "docker" }) else { throw TestError("no Red docker entry") }
             try TestSuite.assertEqual(red.arguments, ["volume", "rm", CommandSpec.itemToken])
             try TestSuite.assertTrue(red.permits(ruleID: "docker.volumes", tier: .red))
             try TestSuite.assertFalse(red.permits(ruleID: "docker.other", tier: .red))

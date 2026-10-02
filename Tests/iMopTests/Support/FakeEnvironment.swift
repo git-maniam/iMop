@@ -479,6 +479,38 @@ final class FakeCodeSignatureVerifier: CodeSignatureVerifying, @unchecked Sendab
         if let result = _results[fakeKey(path)] { return result }
         return _defaultResult
     }
+
+    // MARK: Signing information (Milestone 6, OrphanDetector condition 5)
+
+    struct SigningInfo: Sendable, Equatable {
+        var teamID: String?
+        var appGroups: [String]
+    }
+
+    private var _signingInfos: [String: SigningInfo?] = [:]
+    /// Answer for paths without an explicit entry (`nil` = cannot be read, the protocol default).
+    private var _defaultSigningInfo: SigningInfo?
+    private var _signingInfoQueries: [String] = []
+
+    /// Sets the signing info of `path` (`nil` = reading it fails).
+    func setSigningInfo(_ info: SigningInfo?, for path: String) {
+        lock.lock(); _signingInfos[fakeKey(path)] = .some(info); lock.unlock()
+    }
+
+    var defaultSigningInfo: SigningInfo? {
+        get { lock.lock(); defer { lock.unlock() }; return _defaultSigningInfo }
+        set { lock.lock(); _defaultSigningInfo = newValue; lock.unlock() }
+    }
+
+    var signingInfoQueries: [String] { lock.lock(); defer { lock.unlock() }; return _signingInfoQueries }
+
+    func signingInfo(path: String) -> (teamID: String?, appGroups: [String])? {
+        lock.lock(); defer { lock.unlock() }
+        _signingInfoQueries.append(path)
+        let info: SigningInfo?
+        if let explicit = _signingInfos[fakeKey(path)] { info = explicit } else { info = _defaultSigningInfo }
+        return info.map { ($0.teamID, $0.appGroups) }
+    }
 }
 
 // MARK: - Clock

@@ -687,6 +687,9 @@ public struct RuleCatalog: Sendable {
             return permanentDeleteAllowList.contains(rule.id) ? [] : ["permanentDelete is not allowed for this rule"]
         case (.yellow, .advisory):
             return ["Yellow rules may not use an advisory action"]
+        case (.yellow, .bootoutAndTrash):
+            // SAFETY-DECISION (M6): a bootout is irreversible; only the Red LaunchAgent rule may use it.
+            return ["bootoutAndTrash is only allowed for a Red rule"]
         case (.red, .bootoutAndTrash):
             return bootoutAndTrashRuleIDs.contains(rule.id) ? [] : ["bootoutAndTrash is not allowed for this rule"]
         case (.red, .trash), (.red, .advisory):

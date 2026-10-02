@@ -428,16 +428,21 @@ public struct PreconditionEvaluator: Sendable {
 
     // MARK: - OrphanDetector (spec §6.9, Milestone 6)
 
-    /// Conditions 2, 3 and 4 of spec §6.9 for `target.owningBundleID`, re-checked at plan AND execute
-    /// time. SAFETY-DECISION: fails closed — no owner, an owner that is not an orphan-candidate
-    /// identifier, or any lookup that errs / times out / answers ambiguously means "not orphaned".
+    /// Conditions 2, 3 and 4 of spec §6.9 (plus the identifier shape, Apple prefix and disconnected
+    /// drives) for `target.owningBundleID`, re-checked at plan AND execute time by the OrphanDetector's
+    /// own evaluator (`OrphanEvaluator.stillOrphaned`), so scan and execute share one implementation.
+    ///
+    /// SAFETY-DECISION: fails closed — no owner, an owner that is not an orphan-candidate identifier
+    /// (`RuleTargetMatcher.isOrphanCandidateIdentifier`), or any lookup that errs / times out / answers
+    /// ambiguously means "not orphaned".
     private func stillOrphaned(_ target: ScanTarget) async -> (Bool, String) {
-        guard let owner = target.owningBundleID?.trimmingCharacters(in: .whitespacesAndNewlines), !owner.isEmpty,
+        guard let owner = target.owningBundleID, !owner.isEmpty,
+              owner == owner.trimmingCharacters(in: .whitespacesAndNewlines),
               RuleTargetMatcher.isOrphanCandidateIdentifier(owner) else {
             return (false, "The app this belongs to is unknown — treated as installed")
         }
-        let verdict = await StillOrphanedCheck.evaluate(identifier: owner, environment: environment)
-        return (verdict.orphaned, verdict.detail)
+        let outcome = await OrphanEvaluator.preconditionOutcome(owningBundleID: owner, environment: environment)
+        return (outcome.passed, outcome.detail)
     }
 
     // MARK: - Manifests
@@ -739,141 +744,3 @@ struct BundleIDPattern: Sendable {
     }
 }
 
-
-// MARK: - OrphanDetector conditions 2–4 (spec §6.9)
-
-/// The live part of the OrphanDetector's decision (spec §6.9 conditions 2, 3, 4), shared by the
-/// `stillOrphaned` precondition. Read-only: LaunchServices / Spotlight lookups, the running-app and
-/// process lists, and the read-only `/usr/sbin/pkgutil --pkgs`.
-///
-/// SAFETY-DECISION: every answer that is not a definite "absent" (nil, error, timeout, truncated or
-/// empty receipt list, an unexpected executable path) makes the identifier NOT orphaned.
-public enum StillOrphanedCheck {
-    public struct Verdict: Sendable, Hashable {
-        public let orphaned: Bool
-        public let detail: String
-    }
-
-    /// SAFETY-DECISION: pkgutil is only ever run from this SIP-protected path.
-    public static let pkgutilPath = "/usr/sbin/pkgutil"
-    public static let pkgutilArguments = ["--pkgs"]
-    static let pkgutilTimeout: TimeInterval = 30
-
-    public static func evaluate(identifier: String, appName: String? = nil, environment: SafeCleanEnvironment) async -> Verdict {
-        let ids = relatedIdentifiers(identifier)
-        // Condition 2: LaunchServices AND Spotlight must both answer, and both find nothing.
-        for id in ids {
-            guard let urls = environment.applications.applicationURLs(forBundleIdentifier: id) else {
-                return Verdict(orphaned: false, detail: "Could not check whether the app is installed — treated as installed")
-            }
-            if !urls.isEmpty { return Verdict(orphaned: false, detail: "The app (\(id)) is installed") }
-            guard let paths = environment.applications.spotlightApplicationPaths(forBundleIdentifier: id) else {
-                return Verdict(orphaned: false, detail: "Spotlight could not confirm the app is gone — treated as installed")
-            }
-            if !paths.isEmpty { return Verdict(orphaned: false, detail: "Spotlight found the app (\(id)) on a volume") }
-        }
-        // Condition 3: no related running app or process.
-        if let running = runningEvidence(ids: ids, appName: appName, environment: environment) {
-            return Verdict(orphaned: false, detail: running)
-        }
-        // Condition 4: no package receipt referencing it.
-        guard let packages = await packageReceiptIDs(environment: environment) else {
-            return Verdict(orphaned: false, detail: "Could not read the installer receipts (pkgutil) — treated as installed")
-        }
-        if let hit = packages.first(where: { receiptReferences($0, ids: ids) }) {
-            return Verdict(orphaned: false, detail: "An installer receipt (\(hit)) still refers to it")
-        }
-        return Verdict(orphaned: true, detail: "No installed app, running process or installer receipt refers to it")
-    }
-
-    /// The identifier plus the bundle identifier it may stand for: `group.<rest>` → `<rest>`,
-    /// `<TEAMID>.<rest>` → `<rest>` (more names checked can only make "orphaned" rarer).
-    public static func relatedIdentifiers(_ identifier: String) -> [String] {
-        var result = [identifier]
-        let labels = identifier.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
-        if labels.count >= 3 {
-            let first = labels[0]
-            let rest = labels.dropFirst().joined(separator: ".")
-            if first.lowercased() == "group" || looksLikeTeamID(first), !result.contains(rest) { result.append(rest) }
-        }
-        return result
-    }
-
-    /// 10 ASCII upper-case letters or digits (an Apple Developer Team ID).
-    public static func looksLikeTeamID(_ label: String) -> Bool {
-        let scalars = Array(label.unicodeScalars)
-        return scalars.count == 10 && scalars.allSatisfy { ("A"..."Z").contains($0) || ("0"..."9").contains($0) }
-    }
-
-    /// A reason when something related is (or may be) running; `nil` when definitely nothing is.
-    ///
-    /// SAFETY-DECISION: a running bundle id counts when it equals an identifier or one is a dotted
-    /// prefix of the other (`com.x.app` vs `com.x.app.helper`), case-insensitively; a process counts
-    /// when its name equals the identifier's last label or the app name (with proc_name's 15+
-    /// character truncation treated as a match). An unreadable list counts as running.
-    static func runningEvidence(ids: [String], appName: String?, environment: SafeCleanEnvironment) -> String? {
-        guard let apps = environment.runningApplications.runningBundleIdentifiers() else {
-            return "Could not check which apps are running — treated as running"
-        }
-        let wanted = ids.map(PathComparison.normalize)
-        for app in apps {
-            let running = PathComparison.normalize(app)
-            guard !running.isEmpty else { continue }
-            if wanted.contains(where: { $0 == running || $0.hasPrefix(running + ".") || running.hasPrefix($0 + ".") }) {
-                return "A related app (\(app)) is running"
-            }
-        }
-        guard let processes = environment.processes.runningProcessNames() else {
-            return "Could not check which processes are running — treated as running"
-        }
-        var names = Set<String>()
-        for id in ids {
-            if let last = id.split(separator: ".").last.map(String.init), !last.isEmpty { names.insert(PathComparison.normalize(last)) }
-        }
-        if let appName = appName?.trimmingCharacters(in: .whitespacesAndNewlines), !appName.isEmpty {
-            names.insert(PathComparison.normalize(appName))
-        }
-        for process in processes {
-            let candidate = PathComparison.normalize(process)
-            guard !candidate.isEmpty else { continue }
-            if names.contains(where: { $0 == candidate || (candidate.count >= 15 && $0.hasPrefix(candidate)) }) {
-                return "A related process (\(process)) is running"
-            }
-        }
-        return nil
-    }
-
-    /// Package ids from `/usr/sbin/pkgutil --pkgs`, or `nil` when they could not be read completely.
-    static func packageReceiptIDs(environment: SafeCleanEnvironment) async -> [String]? {
-        guard let pkgutil = environment.commands.resolveExecutable("pkgutil"), pkgutil == pkgutilPath else { return nil }
-        let result = await environment.commands.run(executable: pkgutil, arguments: pkgutilArguments,
-                                                    timeout: pkgutilTimeout, purpose: .readOnly)
-        guard result.succeeded, !result.timedOut else { return nil }
-        return parsePackageIDs(result.stdout)
-    }
-
-    /// One package id per non-empty line. SAFETY-DECISION: `nil` when the output was truncated, a line
-    /// contains control characters, or there is no package at all (every Mac has Apple's receipts, so
-    /// an empty list means the answer is not trustworthy).
-    public static func parsePackageIDs(_ output: String) -> [String]? {
-        var ids: [String] = []
-        for raw in output.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty { continue }
-            if line.hasPrefix("[truncated") { return nil }
-            guard !line.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return nil }
-            ids.append(line)
-        }
-        return ids.isEmpty ? nil : ids
-    }
-
-    /// Spec §6.9 condition 4: the receipt equals, starts with or contains an identifier, or vice
-    /// versa (case-insensitive).
-    public static func receiptReferences(_ packageID: String, ids: [String]) -> Bool {
-        let package = PathComparison.normalize(packageID)
-        guard !package.isEmpty else { return false }
-        return ids.map(PathComparison.normalize).contains { id in
-            !id.isEmpty && (package.contains(id) || id.contains(package))
-        }
-    }
-}

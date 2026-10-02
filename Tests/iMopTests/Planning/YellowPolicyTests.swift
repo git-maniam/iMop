@@ -53,6 +53,7 @@ struct YellowPolicyTests {
                     case .permanentDelete: action = .permanentDelete
                     case .advisory(let kind): action = .advisory(kind)
                     case .quarantine: action = .quarantine(retentionHours: rule.effectiveRetentionHours)
+                    case .bootoutAndTrash: action = .bootoutAndTrash
                     }
                     for tier in [rule.tier, .red] {
                         let item = PlanItem.makeForTesting(target: target, rule: rule, effectiveTier: tier, action: action, planVerdict: .allowed)

@@ -172,7 +172,8 @@ struct RuleCatalogTests {
                 let catalog = RuleCatalog.load(data: try M2.sourceRulesData(), environment: env.environment)
                 try TestSuite.assertFalse(catalog.rules.isEmpty)
                 for rule in catalog.rules {
-                    try TestSuite.assertEqual(rule.tier, M2.m4CommandRuleTiers[rule.id] ?? M2.m5RuleTiers[rule.id] ?? .green, rule.id)
+                    try TestSuite.assertEqual(rule.tier, M2.m4CommandRuleTiers[rule.id] ?? M2.m5RuleTiers[rule.id]
+                                              ?? M6.ruleTiers[rule.id] ?? .green, rule.id)
                     for (name, text) in [("title", rule.title), ("explanation", rule.explanation),
                                          ("whatYouLose", rule.whatYouLose), ("howItRegenerates", rule.howItRegenerates)] {
                         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -181,6 +182,20 @@ struct RuleCatalogTests {
                     switch rule.action {
                     case .quarantine:
                         try TestSuite.assertFalse(M2.m4CommandRuleIDs.contains(rule.id), rule.id)
+                    // Milestone 6: the Trash / bootout / permanent-delete / advisory rules.
+                    case .trash:
+                        try TestSuite.assertTrue(M6.actionableRuleIDs.contains(rule.id), rule.id)
+                        try TestSuite.assertTrue(rule.tier == .yellow || rule.tier == .red, rule.id)
+                    case .bootoutAndTrash:
+                        try TestSuite.assertEqual(rule.id, "leftovers.launchAgents")
+                        try TestSuite.assertEqual(rule.tier, .red, rule.id)
+                    case .permanentDelete:
+                        try TestSuite.assertTrue(RuleCatalog.permanentDeleteAllowList.contains(rule.id), rule.id)
+                        try TestSuite.assertEqual(rule.tier, .yellow, rule.id)
+                    case .advisory:
+                        try TestSuite.assertTrue(M6.advisoryRuleIDs.contains(rule.id), rule.id)
+                        try TestSuite.assertEqual(rule.tier, .advisory, rule.id)
+                        try TestSuite.assertEqual(rule.allowRoots, [], rule.id)
                     case .command(let spec):
                         try TestSuite.assertTrue(M2.m4CommandRuleIDs.contains(rule.id), rule.id)
                         if rule.tier == .green { try TestSuite.assertTrue(spec.idempotentSafe, rule.id) }
@@ -197,6 +212,9 @@ struct RuleCatalogTests {
                             try TestSuite.assertEqual(rule.allowRoots, [Rule.projectRootsToken], rule.id)
                         } else if rule.id == "lightroom.previews" {
                             try TestSuite.assertEqual(rule.allowRoots, ["{HOME}"], rule.id)
+                        } else if M6.nonHomeRuleIDs.contains(rule.id) {
+                            // M6: only the Swift-pinned non-home rules (RuleCatalog.nonHomeRuleSpecs).
+                            try TestSuite.assertTrue(RuleCatalog.nonHomeRuleSpecs[rule.id] != nil, rule.id)
                         } else {
                             try TestSuite.assertTrue(root.hasPrefix("{HOME}/"), "\(rule.id): \(root)")
                         }
@@ -444,9 +462,10 @@ struct RuleCatalogTests {
         await TestSuite.run("RuleCatalog: Swift-coded non-home exceptions apply only to their own rule ids") {
             try await M1.withEnv { env in
                 // Review M2: the exception id must also have its complete Swift-pinned shape.
+                // Milestone 6: installers.macOS is pinned to its read-only inspector.
                 let pinned: [String: Any] = [
                     "tier": "yellow", "action": "trash", "allowRoots": ["/Applications"],
-                    "discovery": ["glob": ["/Applications/Install macOS *.app"]],
+                    "discovery": ["inspector": "macOSInstallers"],
                     "preconditions": ["appleSigned", ["appNotRunning": ["com.apple.InstallAssistant.*"]]],
                 ]
                 let installers = M2.ruleJSON("installers.macOS", overrides: pinned)

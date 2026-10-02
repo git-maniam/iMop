@@ -363,6 +363,119 @@ public actor Executor {
                 return .skipped(rejection)
             }
             return await actOnFilesystem(item, runID: runID, state: &state)
+
+        case .bootoutAndTrash:
+            if let rejection = lastMomentIdentityRejection(item) {
+                await audit(runID, item: item, action: "item.recheck", verdict: "rejected", rejectionReason: rejection.reason)
+                return .skipped(rejection)
+            }
+            // SAFETY-DECISION (M6): the plist is moved to the Trash ONLY after a successful bootout
+            // (or launchd's documented "not loaded" answer); any other outcome fails the item and
+            // leaves the plist where it is.
+            if let failure = await bootOutLaunchAgent(item, runID: runID) { return failure }
+            if let rejection = lastMomentIdentityRejection(item) {
+                await audit(runID, item: item, action: "item.recheck", verdict: "rejected", rejectionReason: rejection.reason)
+                return .skipped(rejection)
+            }
+            return await actOnFilesystem(item, runID: runID, state: &state)
+        }
+    }
+
+    // MARK: - LaunchAgent bootout (Milestone 6, spec §6.9)
+
+    /// launchctl gets at most this long (it only asks launchd to unload one job).
+    static let bootoutTimeout: TimeInterval = 30
+    /// Largest LaunchAgent plist re-read before acting.
+    static let maximumLaunchAgentPlistBytes: Int64 = 1_000_000
+    /// launchctl exit codes for "this job is not loaded" (ESRCH, and launchd's "Could not find
+    /// specified service"); accepted only together with the matching message.
+    static let bootoutNotLoadedExitCodes: Set<Int32> = [3, 113]
+    static let bootoutNotLoadedMessages = ["no such process", "could not find specified service", "could not find service", "not loaded"]
+
+    /// `nil` when the agent was booted out (or was not loaded) and its plist may now be trashed;
+    /// otherwise the item's final status.
+    private func bootOutLaunchAgent(_ item: PlanItem, runID: UUID) async -> ItemStatus? {
+        let actionName = "item.bootout"
+        let target = item.target
+        // SAFETY-DECISION: re-read the plist right before acting — it must still name a program that
+        // no longer exists (an agent whose binary came back, or that changed, is not touched).
+        if let problem = Self.launchAgentOrphanProblem(path: target.path, fileSystem: environment.fileSystem) {
+            let rejection = SafetyRejection.preconditionFailed(name: "launchAgentOrphaned", detail: problem)
+            await audit(runID, item: item, action: actionName, verdict: "skipped", rejectionReason: rejection.reason)
+            return .skipped(rejection)
+        }
+        let arguments = CommandAllowList.launchAgentBootoutArguments(userID: environment.userID, plistPath: target.path)
+        let canonicalizer = PathCanonicalizer(environment: environment)
+        var homes = [environment.homePath]
+        for form in PreconditionEvaluator.homeForms(environment: environment, canonicalizer: canonicalizer)
+        where !homes.contains(form.path) {
+            homes.append(form.path)
+        }
+        guard actionEntry(tool: CommandAllowList.launchctlTool, arguments: arguments) != nil,
+              CommandAllowList.launchAgentBootoutAllowed(arguments: arguments, userID: environment.userID, homeDirectories: homes) else {
+            let rejection = SafetyRejection.doesNotMatchRule(detail: "launchctl bootout is not allowed for this item")
+            await audit(runID, item: item, action: actionName, verdict: "skipped", rejectionReason: rejection.reason)
+            return .skipped(rejection)
+        }
+        // SAFETY-DECISION: only the SIP-protected /bin/launchctl is ever run.
+        guard let executable = environment.commands.resolveExecutable(CommandAllowList.launchctlTool),
+              executable == CommandAllowList.launchctlPath else {
+            let message = "launchctl was not found at \(CommandAllowList.launchctlPath)"
+            await audit(runID, item: item, action: actionName, verdict: "failed", rejectionReason: message)
+            return .failed(.safetyRejected("untrusted or missing executable"), message: message)
+        }
+        let result = await runActionCommand(executable: executable, arguments: arguments, timeout: Self.bootoutTimeout)
+        let detail = Self.commandDetail(executable: executable, arguments: arguments, result: result)
+        if result.timedOut {
+            await audit(runID, item: item, action: actionName, verdict: "failed", rejectionReason: "timeout",
+                        commandExitCode: result.exitCode, detail: detail)
+            return .failed(.timeout, message: "launchctl did not finish within \(Int(Self.bootoutTimeout)) s; the agent was left in place")
+        }
+        if result.exitCode == 0 {
+            await audit(runID, item: item, action: actionName, verdict: "succeeded", commandExitCode: 0, detail: detail)
+            return nil
+        }
+        if Self.isNotLoadedResult(result) {
+            await audit(runID, item: item, action: actionName, verdict: "succeeded", rejectionReason: "agent was not loaded",
+                        commandExitCode: result.exitCode, detail: detail)
+            return nil
+        }
+        await audit(runID, item: item, action: actionName, verdict: "failed", rejectionReason: "exit code \(result.exitCode)",
+                    commandExitCode: result.exitCode, detail: detail)
+        let stderr = AuditEvent.truncated(result.stderr, limit: 1024)
+        return .failed(.commandFailed(result.exitCode),
+                       message: (stderr.isEmpty ? "launchctl exited with code \(result.exitCode)" : stderr)
+                           + " — the agent was not moved to the Trash")
+    }
+
+    /// launchd's documented "not loaded" answer: a known exit code AND a matching message.
+    static func isNotLoadedResult(_ result: CommandResult) -> Bool {
+        guard !result.timedOut, bootoutNotLoadedExitCodes.contains(result.exitCode) else { return false }
+        let text = (result.stderr + "\n" + result.stdout).lowercased()
+        return bootoutNotLoadedMessages.contains { text.contains($0) }
+    }
+
+    /// Why the LaunchAgent plist at `path` is NOT (or no longer provably) orphaned, or `nil` when it
+    /// still parses exactly like the scan saw it (`OrphanedLaunchAgentsInspector.parseAgent`) and its
+    /// program is still PROVEN missing (`OrphanedLaunchAgentsInspector.programState == .missing`).
+    ///
+    /// SAFETY-DECISION: the scan's own parser and existence proof are reused, so execute is never
+    /// more permissive than discovery: any read / parse problem, a program that exists again, or one
+    /// whose absence cannot be proven (permission, symlink, `/Volumes/…` drive that may only be
+    /// disconnected) means the agent is left alone.
+    static func launchAgentOrphanProblem(path: String, fileSystem: any FileSystemProbe) -> String? {
+        guard let info = fileSystem.lstat(path), info.isRegularFile, !info.isSymlink,
+              info.logicalSize <= maximumLaunchAgentPlistBytes,
+              let plist = DevToolsFileReader.readPlistDictionary(path, fileSystem: fileSystem) else {
+            return "The LaunchAgent could not be read"
+        }
+        guard let agent = OrphanedLaunchAgentsInspector.parseAgent(plist) else {
+            return "The LaunchAgent's label or program could not be determined"
+        }
+        switch OrphanedLaunchAgentsInspector.programState(agent.program, fileSystem: fileSystem) {
+        case .missing: return nil
+        case .exists: return "The LaunchAgent's program (\(agent.program)) exists again"
+        case .unknown: return "Could not prove that the LaunchAgent's program (\(agent.program)) is gone"
         }
     }
 
@@ -383,8 +496,19 @@ public actor Executor {
                     await audit(runID, action: "quarantine.beginSession", verdict: "succeeded",
                                 detail: "quarantine session \(sessionID.uuidString)")
                 }
-                // The confirmed (hashed) retention is passed on and must equal the rule's.
-                let entry = try await quarantine.quarantine(target: target, rule: item.rule, tier: item.effectiveTier,
+                // The confirmed (hashed) retention is passed on. SAFETY-DECISION (M6): it must equal the
+                // retention the CURRENT settings give this rule (`ScanSettings.effectiveRetentionHours`,
+                // which may only LENGTHEN the rule's own value) — a plan built with other settings, or a
+                // shorter value, is refused. The Quarantine is handed a rule whose retention is exactly
+                // the confirmed value.
+                let expectedRetention = environment.scanSettings.effectiveRetentionHours(for: item.rule)
+                guard retentionHours == expectedRetention,
+                      let quarantineRule = item.rule.withLengthenedRetention(hours: retentionHours) else {
+                    let rejection = SafetyRejection.doesNotMatchRule(detail: "quarantine retention does not match the rule")
+                    await audit(runID, item: item, action: actionName, verdict: "skipped", rejectionReason: rejection.reason)
+                    return .skipped(rejection)
+                }
+                let entry = try await quarantine.quarantine(target: target, rule: quarantineRule, tier: item.effectiveTier,
                                                             sessionID: sessionID, retentionHours: retentionHours)
                 await audit(runID, item: item, action: actionName, verdict: "succeeded",
                             detail: "quarantine session \(sessionID.uuidString), entry \(entry.id.uuidString), \(entry.quarantinedName)")
@@ -399,7 +523,7 @@ public actor Executor {
                 return .failed(category, message: message)
             }
 
-        case .trash:
+        case .trash, .bootoutAndTrash:
             guard let pinned = target.identity else { return .skipped(.missingIdentity) }
             do {
                 let result = try trash.moveToTrash(path: target.path, expectedIdentity: pinned)
@@ -413,7 +537,12 @@ public actor Executor {
                 await audit(runID, item: item, action: actionName, verdict: "succeeded", detail: "moved to \(result)")
                 status = .trashed(resultPath: result)
             } catch {
-                let (category, message) = Self.category(for: error)
+                var (category, message) = Self.category(for: error)
+                // Spec §8 (M6): moving an app bundle needs the App Management permission; macOS
+                // reports its absence as EPERM / EACCES.
+                if category == .permissionDenied, Self.isAppBundlePath(target.path) {
+                    message = Self.appManagementPermissionMessage
+                }
                 await auditFailure(runID, item: item, action: actionName, status: .failed(category, message: message))
                 return .failed(category, message: message)
             }
@@ -431,7 +560,7 @@ public actor Executor {
             }
 
         case .command, .advisory:
-            // Unreachable: routed elsewhere by `process`.
+            // Unreachable: routed elsewhere by `process`. (`.bootoutAndTrash` is the trash branch above.)
             let rejection = SafetyRejection.doesNotMatchRule(detail: "not a file-system action")
             return .skipped(rejection)
         }
@@ -468,7 +597,7 @@ public actor Executor {
         // action entry of the Swift-coded `CommandAllowList` that this rule and tier may use, with the
         // `{ITEM}` value accepted by that entry's validator (the live `CommandRunner` checks the same
         // table again). A tampered or invalid item is refused here and never reaches a runner.
-        guard let entry = CommandAllowList.standard.entry(tool: spec.tool, arguments: arguments, purpose: .action),
+        guard let entry = actionEntry(tool: spec.tool, arguments: arguments),
               entry.permits(ruleID: item.rule.id, tier: item.rule.tier) else {
             let rejection = SafetyRejection.doesNotMatchRule(detail: "command is not on the reviewed allow-list for this rule")
             await audit(runID, item: item, action: actionName, verdict: "skipped", rejectionReason: rejection.reason)
@@ -481,13 +610,8 @@ public actor Executor {
         }
         // A rule may shorten a command's reviewed timeout, never extend it.
         let timeout = min(spec.timeout, TimeInterval(entry.maximumTimeoutSeconds))
-        // Only the Executor ever asks for `.action`; the live runner re-checks the allow-list.
-        let result = await environment.commands.run(executable: executable, arguments: arguments,
-                                                    timeout: timeout, purpose: .action)
-        let half = AuditEvent.maxDetailBytes / 2 - 64
-        let detail = "\(executable) \(arguments.joined(separator: " "))\nstdout:\n"
-            + AuditEvent.truncated(result.stdout, limit: half)
-            + "\nstderr:\n" + AuditEvent.truncated(result.stderr, limit: half)
+        let result = await runActionCommand(executable: executable, arguments: arguments, timeout: timeout)
+        let detail = Self.commandDetail(executable: executable, arguments: arguments, result: result)
 
         if result.timedOut {
             await audit(runID, item: item, action: actionName, verdict: "failed", rejectionReason: "timeout",
@@ -504,6 +628,25 @@ public actor Executor {
         await audit(runID, item: item, action: actionName, verdict: "succeeded",
                     commandExitCode: result.exitCode, detail: detail)
         return .commandSucceeded(exitCode: result.exitCode)
+    }
+
+    /// The action entry of the Swift-coded allow-list this exact invocation matches (the single
+    /// allow-list lookup for actions).
+    private func actionEntry(tool: String, arguments: [String]) -> CommandAllowList.Entry? {
+        CommandAllowList.standard.entry(tool: tool, arguments: arguments, purpose: .action)
+    }
+
+    /// The single place that runs a cleanup command. Only the Executor ever asks for `.action`; the
+    /// live runner re-checks the allow-list (and, for launchctl, the uid and home folder).
+    private func runActionCommand(executable: String, arguments: [String], timeout: TimeInterval) async -> CommandResult {
+        await environment.commands.run(executable: executable, arguments: arguments, timeout: timeout, purpose: .action)
+    }
+
+    static func commandDetail(executable: String, arguments: [String], result: CommandResult) -> String {
+        let half = AuditEvent.maxDetailBytes / 2 - 64
+        return "\(executable) \(arguments.joined(separator: " "))\nstdout:\n"
+            + AuditEvent.truncated(result.stdout, limit: half)
+            + "\nstderr:\n" + AuditEvent.truncated(result.stderr, limit: half)
     }
 
     // MARK: - Checks
@@ -534,6 +677,15 @@ public actor Executor {
         case .trash:
             guard target.kind == .filesystem else { return .doesNotMatchRule(detail: "not a file-system item") }
             guard rule.action == .trash else { return .doesNotMatchRule(detail: "planned action does not match rule") }
+            return nil
+        case .bootoutAndTrash:
+            guard target.kind == .filesystem else { return .doesNotMatchRule(detail: "not a file-system item") }
+            guard rule.action == .bootoutAndTrash else { return .doesNotMatchRule(detail: "planned action does not match rule") }
+            // SAFETY-DECISION (M6): only the Swift-pinned LaunchAgent rule, with its complete
+            // reviewed shape (a hand-built rule with the same id but another shape is refused).
+            guard RuleCatalog.bootoutAndTrashRuleIDs.contains(rule.id), RuleCatalog.validationProblems(for: rule).isEmpty else {
+                return .doesNotMatchRule(detail: "bootout is not allowed for this rule")
+            }
             return nil
         case .permanentDelete:
             guard target.kind == .filesystem else { return .doesNotMatchRule(detail: "not a file-system item") }
@@ -648,7 +800,19 @@ public actor Executor {
         case .command: return "command"
         case .permanentDelete: return "permanentDelete"
         case .advisory: return "advisory"
+        case .bootoutAndTrash: return "bootoutAndTrash"
         }
+    }
+
+    /// Spec §8: shown when the Trash refuses an app bundle (App Management not granted).
+    public static let appManagementPermissionMessage =
+        "App Management permission is needed to move apps to the Trash. Allow iMop in System Settings › Privacy & Security › App Management, then try again."
+
+    /// `true` when the last path component is a `.app` bundle name.
+    static func isAppBundlePath(_ path: String) -> Bool {
+        guard let name = path.split(separator: "/").last else { return false }
+        let lowered = PathComparison.normalize(String(name))
+        return lowered.hasSuffix(".app") && lowered.count > ".app".count
     }
 
     // MARK: - Reporting

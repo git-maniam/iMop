@@ -286,7 +286,9 @@ public struct RuleTargetMatcher: Sendable {
             guard rel.count == 3, rel[0] == "library", let normalizedOwner else { return false }
             guard let container = Self.orphanContainerFolders.first(where: { PathComparison.normalize($0) == rel[1] }),
                   let identifier = Self.orphanIdentifier(container: container, name: relative[2]) else { return false }
+            // SAFETY-DECISION (M6 integration): the inspector's own pure shape check must agree too.
             return PathComparison.normalize(identifier) == normalizedOwner
+                && OrphanedAppDataInspector.matchesTargetShape(relative: relative, owner: owner)
 
         case .orphanedLaunchAgents:
             // Library/LaunchAgents/<name>.plist, never Apple's; a recorded owner (the label) is never Apple's.
@@ -298,7 +300,7 @@ public struct RuleTargetMatcher: Sendable {
             let base = String(name.dropLast(suffix.count))
             if BundleIdentifierHeuristics.isApple(base) || Self.isAppleOrphanIdentifier(base) { return false }
             if let normalizedOwner, normalizedOwner.hasPrefix("com.apple") { return false }
-            return true
+            return OrphanedLaunchAgentsInspector.matchesTargetShape(relative: relative)
 
         case .jetbrainsConfig:
             // Library/Application Support/JetBrains/<Product><major>.<minor> of a KNOWN product, owned
@@ -309,6 +311,7 @@ public struct RuleTargetMatcher: Sendable {
                   let parsed = JetBrainsCachesInspector.parseFolderName(relative[3]),
                   let expected = JetBrainsCachesInspector.bundleID(forProduct: parsed.product) else { return false }
             return PathComparison.normalize(expected) == normalizedOwner && normalizedOwner.hasPrefix("com.jetbrains.")
+                && JetBrainsConfigInspector.matchesTargetShape(relative: relative, owner: owner)
 
         case .trashContents:
             // .Trash/<child>: direct children only, no owner.
@@ -316,6 +319,7 @@ public struct RuleTargetMatcher: Sendable {
             let name = relative[1]
             return !name.isEmpty && name != "." && name != ".."
                 && !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
+                && TrashContentsInspector.matchesTargetShape(relative: relative)
 
         default:
             break

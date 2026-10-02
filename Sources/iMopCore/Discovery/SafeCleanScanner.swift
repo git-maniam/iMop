@@ -182,6 +182,11 @@ public struct SafeCleanScanner: Sendable {
         if let unknown = table[.appUserCachesUnknownOwner] as? UnknownOwnerCachesInspector, !unknown.hasInjectedCatalog {
             table[.appUserCachesUnknownOwner] = UnknownOwnerCachesInspector(catalog: catalog)
         }
+        // SAFETY-DECISION (M6, spec §6.9 condition 6): likewise, the OrphanDetector excludes every
+        // folder another rule of THIS scanner's catalog may target.
+        if let orphans = table[.orphanedAppData] as? OrphanedAppDataInspector, !orphans.hasInjectedCatalog {
+            table[.orphanedAppData] = orphans.with(catalog: catalog)
+        }
         self.inspectors = table
         self.hasFullDiskAccess = hasFullDiskAccess
         self.waivedSystemRoots = waivedRoots
@@ -195,7 +200,22 @@ public struct SafeCleanScanner: Sendable {
          // Milestone 5.
          XcodeDerivedDataInspector(), XcodeArchivesInspector(), XcodeDeviceSupportInspector(), VSCodeExtensionsInspector(),
          JetBrainsCachesInspector(), ProjectArtifactsInspector(), LightroomPreviewsInspector(), UnknownOwnerCachesInspector(),
-         ChromiumServiceWorkerInspector()]
+         ChromiumServiceWorkerInspector(),
+         // Milestone 6: OrphanDetector, LaunchAgents, Trash flows and the read-only advisory inspector.
+         // (downloads.diskImages, downloads.archives and system.coreDumps are glob rules.)
+         OrphanedAppDataInspector(), OrphanedLaunchAgentsInspector(), XcodeExtraInstallsInspector(),
+         MacOSInstallersInspector(), JetBrainsConfigInspector(), TrashContentsInspector(), AdvisoryInspector()]
+    }
+
+    // MARK: - Volumes seen (spec §6.9 condition 8)
+
+    /// The `ScanSettings.lastSeenVolumes` value to persist after a scan (Milestone 7 stores it).
+    ///
+    /// SAFETY-DECISION: see `ScanSettings.lastSeenVolumesAfterScan(mounted:)` — a drive that is not
+    /// connected now stays remembered (orphan detection stays paused until it is back), and a failed
+    /// listing changes nothing.
+    public func updatedLastSeenVolumes() -> [String] {
+        environment.scanSettings.lastSeenVolumesAfterScan(mounted: environment.volumes.mountedVolumes())
     }
 
     /// A file rule and a vendor-command rule that clean the same thing: exactly one of them may offer
@@ -351,8 +371,9 @@ public struct SafeCleanScanner: Sendable {
         if rule.requiresFullDiskAccess && !hasFullDiskAccess {
             return finish([], .lockedNeedsFullDiskAccess)
         }
-        // Advisory targets (kind .advisory) come in a later milestone.
-        if rule.tier == .advisory { return finish([], .unavailable(Self.laterMilestoneMessage)) }
+        // Milestone 6: Advisory rules yield explanation-only targets (kind .advisory) from the pinned,
+        // read-only advisory inspector.
+        if rule.tier == .advisory { return await scanAdvisoryRule(rule, context: context, finish: finish) }
 
         // Exclusive pairs (file rule vs vendor-command rule): decided once per scan.
         for pair in Self.exclusiveRulePairs {
@@ -366,13 +387,13 @@ public struct SafeCleanScanner: Sendable {
         }
 
         switch rule.action {
-        case .quarantine, .trash, .permanentDelete:
+        case .quarantine, .trash, .permanentDelete, .bootoutAndTrash:
             break
         case .command:
             return await scanCommandRule(rule, context: context, finish: finish)
         case .advisory:
-            // SAFETY-DECISION: advisory-only rules must never yield filesystem targets that could be
-            // routed to a file action, so they are reported unavailable until their milestone.
+            // SAFETY-DECISION: a non-Advisory-tier rule with an advisory action is not one of the pinned
+            // advisory rules; it never yields targets.
             return finish([], .unavailable(Self.laterMilestoneMessage))
         }
 
@@ -496,6 +517,91 @@ public struct SafeCleanScanner: Sendable {
             return finish([], .unavailable(withheld))
         }
         return finish(targets, .ok)
+    }
+
+    // MARK: - Advisory rules (Milestone 6, spec §6.4, §6.7, §6.10)
+
+    /// Discovers the explanation-only items of a pinned Advisory rule.
+    ///
+    /// SAFETY-DECISION: only rules in `RuleCatalog.advisoryRuleSpecs` (Advisory tier, the pinned
+    /// advisory action, the `advisory` inspector) are scanned. Only candidates of kind `.advisory` are
+    /// kept — a file-system or command candidate from the advisory inspector is dropped — so nothing
+    /// an advisory rule reports can ever be routed to an action (SafetyGate rejects `.advisory` kinds
+    /// and the rules have no allow-root). Their paths may name protected or system locations (e.g.
+    /// MobileSync, /Library) because they are only shown, never acted on; sizes are informational and
+    /// never counted as reclaimable.
+    private func scanAdvisoryRule(_ rule: Rule, context: Context,
+                                  finish: ([ScanTarget], RuleScanStatus) -> RuleScanResult) async -> RuleScanResult {
+        guard let kind = RuleCatalog.advisoryRuleSpecs[rule.id], rule.action == .advisory(kind),
+              rule.discovery == .inspector(.advisory), let inspector = inspectors[.advisory] else {
+            return finish([], .unavailable(Self.laterMilestoneMessage))
+        }
+        let output = await inspector.discover(rule: rule, environment: environment)
+        if Task.isCancelled { return finish([], .failed(Self.cancelledMessage)) }
+        switch output.status {
+        case .ok:
+            break
+        case .unavailable, .failed, .lockedNeedsFullDiskAccess:
+            return finish([], output.status)
+        }
+        var targets: [ScanTarget] = []
+        var seen = Set<String>()
+        for candidate in output.candidates {
+            if Task.isCancelled { return finish([], .failed(Self.cancelledMessage)) }
+            guard case .advisory = candidate.kind, let target = advisoryTarget(candidate, rule: rule, context: context),
+                  seen.insert(target.path + "|" + target.displayName).inserted else { continue }
+            targets.append(target)
+        }
+        if Task.isCancelled { return finish([], .failed(Self.cancelledMessage)) }
+        return finish(targets, .ok)
+    }
+
+    private func advisoryTarget(_ candidate: DiscoveredCandidate, rule: Rule, context: Context) -> ScanTarget? {
+        let path: String
+        if SafetyGate.looksLikePath(candidate.path) {
+            guard case .success(let clean) = PathCanonicalizer.clean(candidate.path, home: environment.homePath) else { return nil }
+            path = clean.path
+        } else {
+            guard Self.isPlainLabel(candidate.path) else { return nil }
+            path = candidate.path
+        }
+        let displayName = candidate.displayName.flatMap { Self.isPlainLabel($0) ? $0 : nil } ?? path
+        var notes = candidate.notes.filter { !$0.unicodeScalars.contains { $0.properties.generalCategory == .control } }
+        var allocated: Int64 = 0
+        var itemCount = 0
+        if candidate.sizePaths.isEmpty {
+            allocated = max(0, candidate.reportedBytes ?? 0)
+        } else {
+            var unmeasured = false
+            for raw in candidate.sizePaths {
+                // Read-only measurement; never through a symlink.
+                guard case .success(let clean) = PathCanonicalizer.clean(raw, home: environment.homePath),
+                      let info = environment.fileSystem.lstat(clean.path), !info.isSymlink,
+                      let estimate = context.sizer.measure(path: clean.path) else {
+                    unmeasured = true
+                    continue
+                }
+                allocated = Self.saturatingAdd(allocated, estimate.allocatedBytes)
+                itemCount += estimate.itemCount
+                if !estimate.complete { unmeasured = true }
+                if Task.isCancelled { return nil }
+            }
+            if unmeasured { notes.append("Size may be underestimated: some items could not be read.") }
+        }
+        return ScanTarget(
+            ruleID: rule.id,
+            kind: .advisory,
+            path: path,
+            displayName: displayName,
+            identity: nil,
+            allocatedBytes: allocated,
+            // SAFETY-DECISION (spec §7 honesty): iMop does not free advisory space itself.
+            reclaimableBytes: 0,
+            itemCount: max(itemCount, 1),
+            lastUsed: candidate.lastUsed,
+            owningBundleID: nil,
+            notes: notes
+        )
     }
 
     enum CommandCandidateOutcome {

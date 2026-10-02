@@ -417,16 +417,18 @@ public struct CommandAllowList: Sendable {
             && CommandSlotKind.launchAgentPlistPath.accepts(arguments[2])
     }
 
-    /// The bootout as the Executor (and the live runner) may run it: an allow-listed action invocation
-    /// whose domain is exactly `gui/<userID>` and whose plist is EXACTLY
+    /// The bootout's per-user constraints, checked by its only callers (the Executor and the live
+    /// runner) IN ADDITION to the allow-list table lookup they each perform: the invocation has the
+    /// bootout shape, its domain is exactly `gui/<userID>` and its plist is EXACTLY
     /// `<home>/Library/LaunchAgents/<name>.plist` for one of `homeDirectories` (compared exactly, after
     /// cleaning; the file name is one component and never `com.apple.*`).
     ///
     /// SAFETY-DECISION: the static table cannot know the user's uid or home folder, so they are
-    /// checked here, by the only callers; anything else (another user's domain, `/Library/LaunchAgents`,
+    /// checked here; anything else (another user's domain, `/Library/LaunchAgents`,
     /// `/Library/LaunchDaemons`, a nested path) is refused and launchctl is never run.
     public static func launchAgentBootoutAllowed(arguments: [String], userID: UInt32, homeDirectories: [String]) -> Bool {
-        guard matches(tool: launchctlTool, arguments: arguments, purpose: .action), arguments.count == 3,
+        guard arguments.count == 3, arguments[0] == "bootout",
+              CommandSlotKind.launchdGUIDomain.accepts(arguments[1]), CommandSlotKind.launchAgentPlistPath.accepts(arguments[2]),
               arguments[1] == "gui/\(userID)" else { return false }
         let plist = arguments[2]
         guard case .success(let clean) = PathCanonicalizer.clean(plist, home: nil), clean.path == plist,
