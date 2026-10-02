@@ -95,12 +95,22 @@ public struct OllamaModelsInspector: Inspector {
     public var id: InspectorID { .ollamaModels }
 
     static let ruleID = "ai.ollama"
+    public static let notRunningMessage = "Ollama is not running — open Ollama and scan again to see its models (iMop never starts it)"
     static let actionArguments = ["rm", CommandSpec.itemToken]
 
     public func discover(rule: Rule, environment: SafeCleanEnvironment) async -> InspectorOutput {
         guard rule.id == Self.ruleID,
               CommandDiscovery.ruleMatches(rule, tool: OllamaClient.tool, arguments: Self.actionArguments, required: []) else {
             return InspectorOutput(candidates: [], status: .unavailable("This rule does not match its Ollama command"))
+        }
+        // SAFETY-DECISION (review M7): on macOS the `ollama` CLI starts the Ollama app when its server
+        // is not running. A read-only scan must never start another app (spec §3.6), so `ollama list`
+        // runs only while an Ollama process is already running; "could not check" offers nothing.
+        guard let processNames = environment.processes.runningProcessNames() else {
+            return InspectorOutput(candidates: [], status: .unavailable("Could not check whether Ollama is running"))
+        }
+        guard processNames.contains(where: { $0.caseInsensitiveCompare(OllamaClient.tool) == .orderedSame }) else {
+            return InspectorOutput(candidates: [], status: .unavailable(Self.notRunningMessage))
         }
         let listing: OllamaClient.Listing
         switch await OllamaClient(environment: environment).list() {

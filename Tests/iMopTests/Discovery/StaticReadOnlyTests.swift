@@ -3,7 +3,8 @@ import Foundation
 /// Spec §13 M2 acceptance: the discovery, sizing, planning and rule code is statically read-only.
 /// Greps the SOURCE files (comments included) for any mutation API.
 struct StaticReadOnlyTests {
-    static let readOnlyDirectories = ["Discovery", "Sizing", "Planning", "Rules"]
+    /// Review M6: the permission probes (spec §8) must never write either.
+    static let readOnlyDirectories = ["Discovery", "Sizing", "Planning", "Rules", "Permissions"]
 
     static let forbiddenTokens = [
         "removeItem", "trashItem", "moveItem", "unlink", "rmdir", "removefile", "rename", "renamex_np",
@@ -21,6 +22,9 @@ struct StaticReadOnlyTests {
     /// first marker up to (not including) the second.
     static let liveProbeFile = "Environment/LiveEnvironment.swift"
     static let liveProbeSection = (start: "// MARK: - Shared helpers", end: "// MARK: - Processes")
+    /// Review M6: the read-only live lookups added for the OrphanDetector / advisory rules (running
+    /// apps, LaunchServices + Spotlight, volumes, code-signing information) are held to the same rule.
+    static let liveLookupSection = (start: "// MARK: - Running applications", end: "// MARK: - Commands (disabled runner)")
 
     /// `(label, line number, text)` for every line that must be free of mutation APIs.
     static func linesToScan() throws -> [(String, Int, String)] {
@@ -28,11 +32,13 @@ struct StaticReadOnlyTests {
         let path = M2.coreSourcesPath + "/" + liveProbeFile
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { throw TestError("cannot read \(path)") }
         let all = text.components(separatedBy: "\n")
-        guard let start = all.firstIndex(where: { $0.hasPrefix(liveProbeSection.start) }),
-              let end = all.firstIndex(where: { $0.hasPrefix(liveProbeSection.end) }), start < end else {
-            throw TestError("LiveFileSystemProbe section markers not found in \(liveProbeFile)")
+        for section in [liveProbeSection, liveLookupSection] {
+            guard let start = all.firstIndex(where: { $0.hasPrefix(section.start) }),
+                  let end = all.firstIndex(where: { $0.hasPrefix(section.end) }), start < end else {
+                throw TestError("section markers \(section.start) … \(section.end) not found in \(liveProbeFile)")
+            }
+            for index in start..<end { lines.append((liveProbeFile, index + 1, all[index])) }
         }
-        for index in start..<end { lines.append((liveProbeFile, index + 1, all[index])) }
         return lines
     }
 
@@ -42,14 +48,44 @@ struct StaticReadOnlyTests {
     /// The only directory whose sources may call the raw file-mutation primitives.
     static let executionDirectory = "Sources/iMopCore/Execution/"
 
-    /// TODO(M7): the v1.0 deletion path is removed in Milestone 7, together with its views. Until
-    /// then it is the single explicitly allow-listed exception.
-    static let legacyAllowList: Set<String> = ["Sources/iMopCore/Services/DeletionService.swift"]
+    /// Milestone 7: the v1.0 deletion path (Services/DeletionService.swift and the rest of the v1.0
+    /// services) is gone; nothing outside Execution/ is allow-listed any more.
+    static let removedLegacyFiles = [
+        "Sources/iMopCore/Services/DeletionService.swift", "Sources/iMopCore/Services/ScannerEngine.swift",
+        "Sources/iMopCore/Services/AppRegistryService.swift", "Sources/iMopCore/Services/PermissionService.swift",
+        "Sources/iMopCore/Services/SystemHealthService.swift", "Sources/iMopCore/Utils/FileSafetyRules.swift",
+        "Sources/iMopCore/Models/JunkItem.swift", "Sources/iMopCore/Models/JunkCategory.swift",
+        "Sources/iMopCore/Models/ScanProgress.swift",
+    ]
+
+    /// Milestone 7: the app target (Sources/iMop) drives cleanup ONLY through `AppState`. It never
+    /// builds or runs an Executor or a ConfirmedPlan itself, never touches the action primitives, the
+    /// Quarantine move, the mutation policy or the command runner, and never imports SPI.
+    static let appTargetForbidden: [(label: String, pattern: NSRegularExpression)] = [
+        ("Executor(", #"(?<![A-Za-z0-9_])Executor\s*\("#), ("Executor.shared", #"Executor\.shared"#),
+        (".execute(", #"\.execute\s*\("#), ("ConfirmedPlan.confirm(", #"ConfirmedPlan\s*\.\s*confirm\s*\("#),
+        ("ConfirmedPlan(", #"ConfirmedPlan\s*\("#), ("PlanBuilder(", #"PlanBuilder\s*\("#), ("UserConfirmation(", #"UserConfirmation\s*\("#),
+        ("SafetyGate(", #"SafetyGate\s*\("#), ("SafeCleanScanner(", #"SafeCleanScanner\s*\("#),
+        ("FinderTrash", #"FinderTrash"#), ("RemovefileRemover", #"RemovefileRemover"#),
+        ("TrashMoving", #"TrashMoving"#), ("PermanentRemoving", #"PermanentRemoving"#),
+        ("MutationPolicy", #"MutationPolicy"#), ("fixtureOnly", #"fixtureOnly"#),
+        ("quarantine(target:", #"quarantine\s*\(\s*target\s*:"#), ("Quarantine(environment:", #"(?<![A-Za-z0-9_])Quarantine\s*\(\s*environment"#),
+        ("beginSession", #"beginSession"#), ("CommandRunner", #"CommandRunner"#), ("CommandRunning", #"CommandRunning"#),
+        ("@_spi", #"@_spi"#), ("FixtureTesting", #"FixtureTesting"#),
+        ("makeForTesting", #"makeForTesting"#), ("DeletionService", #"DeletionService"#),
+    ].map { ($0.0, try! NSRegularExpression(pattern: $0.1)) }
 
     /// Raw removal / move primitives that must stay inside Execution/.
     static let confinedTokens = ["removefile", "renamex_np", "trashItem", "removeItem",
                                  // Review M3: the descriptor-relative variants used by Execution/.
                                  "renameatx_np", "removefileat", "unlinkat"]
+
+    /// Milestone 7: a confined token as an identifier — not preceded by an identifier character and
+    /// not followed by a letter or digit (`removefile_state_alloc` still matches; `ReviewSummary.trashItems`
+    /// or `removeItems` does not).
+    static let confinedTokenPatterns: [(token: String, pattern: NSRegularExpression)] = confinedTokens.map {
+        ($0, try! NSRegularExpression(pattern: "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: $0) + "(?![A-Za-z0-9])"))
+    }
 
     /// Declarations of a raw "delete this path" style API.
     static let rawDeletePattern = try! NSRegularExpression(
@@ -143,7 +179,7 @@ struct StaticReadOnlyTests {
     static func runAll() async {
         print("\n🔒 Running Static Read-Only Tests (spec §13 M2)...")
 
-        await TestSuite.run("StaticReadOnly: Discovery/, Sizing/, Planning/, Rules/ and the live file-system probe contain no mutation API") {
+        await TestSuite.run("StaticReadOnly: Discovery/, Sizing/, Planning/, Rules/, Permissions/ and the live read-only probes contain no mutation API") {
             let fm = FileManager.default
             var scanned = 0
             var violations: [String] = []
@@ -176,7 +212,12 @@ struct StaticReadOnlyTests {
                     violations.append("\(label):\(number): \(token)")
                 }
             }
-            try TestSuite.assertTrue(scanned >= 10, "expected the M2 + M3 planning sources, scanned \(scanned) files")
+            // Review M6: + Permissions/ (2 files) and the M6 discovery sources.
+            try TestSuite.assertTrue(scanned >= 25, "expected the M2–M6 read-only sources, scanned \(scanned) files")
+            try TestSuite.assertTrue(probeLines.contains { $0.2.contains("func signingInfo(path:") }
+                                         && probeLines.contains { $0.2.contains("func mountedVolumes()") }
+                                         && probeLines.contains { $0.2.contains("func spotlightApplicationPaths(") },
+                                     "the M6 live lookups must be scanned")
             try TestSuite.assertEqual(violations, [], "mutation APIs found:\n" + violations.joined(separator: "\n"))
         }
 
@@ -202,7 +243,6 @@ struct StaticReadOnlyTests {
             var violations: [String] = []
             var primitives: [String] = []
             for (file, number, line) in try allSourceLines() where declaresRawDelete(line) {
-                if legacyAllowList.contains(file) { continue }
                 // The agreed PermanentRemoving primitive (Execution/Trash.swift) is reachable only
                 // through Executor injection; anything else is a violation.
                 if file == executionDirectory + "Trash.swift", line.contains("removePermanently(path:") {
@@ -227,22 +267,29 @@ struct StaticReadOnlyTests {
             }
         }
 
-        await TestSuite.run("StaticReadOnly (M3): removefile / renamex_np / trashItem / removeItem appear only in Sources/iMopCore/Execution/ (+ TODO(M7) legacy DeletionService)") {
+        await TestSuite.run("StaticReadOnly (M3/M7): removefile / renamex_np / trashItem / removeItem appear only in Sources/iMopCore/Execution/ (no legacy exception)") {
             var violations: [String] = []
             var executionHits = Set<String>()
             for (file, number, line) in try allSourceLines() {
-                for token in confinedTokens where line.contains(token) {
+                for (token, pattern) in confinedTokenPatterns where matches(pattern, line) {
                     if file.hasPrefix(executionDirectory) { executionHits.insert(token); continue }
-                    if legacyAllowList.contains(file) { continue }
                     violations.append("\(file):\(number): \(token)")
                 }
             }
+            // The boundary-aware match still catches every call shape.
+            for sample in ["try FileManager.default.trashItem(at: url, resultingItemURL: nil)", "removefile(path, state, flags)",
+                           "removefile_state_alloc()", "renamex_np(a, b, UInt32(RENAME_EXCL))", "fm.removeItem(atPath: p)",
+                           "unlinkat(fd, name, 0)", "let f = FileManager.default.trashItem"] {
+                try TestSuite.assertTrue(confinedTokenPatterns.contains { matches($0.pattern, sample) }, sample)
+            }
+            try TestSuite.assertFalse(confinedTokenPatterns.contains { matches($0.pattern, "summary.trashItems.count") })
             try TestSuite.assertEqual(violations, [], "mutation primitives outside Execution/:\n" + violations.joined(separator: "\n"))
             // Sanity: the scan does see the Execution module's own uses.
             try TestSuite.assertTrue(executionHits.isSuperset(of: ["removefile", "renamex_np", "trashItem"]), "\(executionHits)")
-            for file in legacyAllowList {
-                try TestSuite.assertTrue(FileManager.default.fileExists(atPath: M2.repoRoot + "/" + file),
-                                         "TODO(M7): \(file) is gone — drop it from the allow-list")
+            // Milestone 7: the v1.0 deletion path is gone for good.
+            for file in removedLegacyFiles {
+                try TestSuite.assertFalse(FileManager.default.fileExists(atPath: M2.repoRoot + "/" + file),
+                                          "\(file) is a v1.0 deletion/scanning path and must not come back")
             }
         }
 
@@ -268,6 +315,37 @@ struct StaticReadOnlyTests {
                 for token in forbidden where line.contains(token) { violations.append("\(file):\(number): \(token)") }
             }
             try TestSuite.assertEqual(violations, [], violations.joined(separator: "\n"))
+        }
+
+        await TestSuite.run("StaticReadOnly (M7): the app target (Sources/iMop) never references Executor internals, ConfirmedPlan, the Trash / removefile primitives, MutationPolicy, Quarantine's move, CommandRunner or any @_spi import") {
+            var violations: [String] = []
+            var appFiles = Set<String>()
+            for (file, number, line) in try allSourceLines() where file.hasPrefix("Sources/iMop/") {
+                appFiles.insert(file)
+                for (label, pattern) in appTargetForbidden where matches(pattern, line) {
+                    violations.append("\(file):\(number): \(label)")
+                }
+            }
+            try TestSuite.assertTrue(!appFiles.isEmpty, "no app sources found under Sources/iMop")
+            try TestSuite.assertEqual(violations, [], "the app target must go through AppState:\n" + violations.joined(separator: "\n"))
+            // The grep itself catches the forbidden shapes …
+            for sample in ["let e = Executor(environment: env, gate: g, quarantine: q, auditLog: a)", "await executor.execute(plan)",
+                           "try ConfirmedPlan.confirm(plan: p, selectedItemIDs: s, confirmation: c, alwaysQuarantine: true)",
+                           "UserConfirmation(reviewPresentedAt: a, confirmedAt: b, perItemConfirmed: [], acknowledgedIrreversible: true)",
+                           "PlanBuilder(environment: env, gate: g, settings: s)",
+                           "FinderTrash()", "RemovefileRemover()", "MutationPolicy.fixtureOnly(root: r)",
+                           "try await q.quarantine(target: t, rule: r, tier: .green, sessionID: s)",
+                           "let runner = CommandRunner(homeDirectory: h)", "@_spi(FixtureTesting) import iMopCore",
+                           "Quarantine(environment: env)"] {
+                try TestSuite.assertTrue(appTargetForbidden.contains { matches($0.pattern, sample) }, sample)
+            }
+            // … and leaves the AppState surface alone.
+            for sample in ["try appState.confirmAndClean(acknowledgedIrreversible: ack)", "ExecutionProgressView()",
+                           "appState.lastReport?.outcomes", "Text(appState.quarantineNotice)", "appState.emptyQuarantineNow()",
+                           "if !AppState.isMutationEnabledInBuild { DryRunBanner() }", "case .quarantine:",
+                           "try await Task.sleep(for: .seconds(ConfirmedPlan.minimumReviewInterval))", "summary.trashItems"] {
+                try TestSuite.assertFalse(appTargetForbidden.contains { matches($0.pattern, sample) }, sample)
+            }
         }
 
         await TestSuite.run("StaticReadOnly (M4): no /bin/sh, /bin/zsh, system(), popen(), sudo, AuthorizationExecuteWithPrivileges, --volumes or autoremove in Sources/ (outside the reviewed forbidden-list lines)") {

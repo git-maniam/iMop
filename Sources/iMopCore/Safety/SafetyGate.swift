@@ -17,6 +17,8 @@ public struct SafetyGate: Sendable {
     private let evaluator: PreconditionEvaluator
     private let userExclusions: [String]
     private let waivedSystemRoots: [String]
+    /// Exclusions added while this gate is in use (e.g. in Settings during a running cleanup).
+    private let liveExclusions: LiveExclusions?
 
     /// Bundle extensions for check 11.
     static let bundleExtensions: Set<String> = ["app", "framework", "bundle", "plugin", "kext", "systemextension", "appex"]
@@ -25,14 +27,16 @@ public struct SafetyGate: Sendable {
     /// may the target itself be a bundle root.
     static let bundleTrashRuleIDs: Set<String> = ["xcode.extraInstalls", "installers.macOS"]
 
-    public init(environment: SafeCleanEnvironment, userExclusions: [String] = [], ageThresholdOverrides: [String: Int] = [:]) {
+    public init(environment: SafeCleanEnvironment, userExclusions: [String] = [], ageThresholdOverrides: [String: Int] = [:],
+                liveExclusions: LiveExclusions? = nil) {
         self.init(environment: environment, userExclusions: userExclusions,
-                  ageThresholdOverrides: ageThresholdOverrides, waivedSystemRoots: [])
+                  ageThresholdOverrides: ageThresholdOverrides, waivedSystemRoots: [], liveExclusions: liveExclusions)
     }
 
     /// Test-only: see `DenyList.init(homeDirectory:waivedSystemRoots:)`.
     @_spi(FixtureTesting)
-    public init(environment: SafeCleanEnvironment, userExclusions: [String], ageThresholdOverrides: [String: Int], waivedSystemRoots: [String]) {
+    public init(environment: SafeCleanEnvironment, userExclusions: [String], ageThresholdOverrides: [String: Int], waivedSystemRoots: [String],
+                liveExclusions: LiveExclusions? = nil) {
         self.environment = environment
         self.canonicalizer = PathCanonicalizer(environment: environment)
         self.evaluator = PreconditionEvaluator(environment: environment, ageThresholdOverrides: ageThresholdOverrides,
@@ -45,6 +49,7 @@ public struct SafetyGate: Sendable {
         }
         self.userExclusions = exclusions
         self.waivedSystemRoots = waivedSystemRoots
+        self.liveExclusions = liveExclusions
     }
 
     // MARK: - Public API
@@ -164,7 +169,7 @@ public struct SafetyGate: Sendable {
         }
 
         // Check 11d — the inspector's file-system identity of the target still holds (review M5).
-        if let rejection = check11dInspectorIdentity(resolved.canonical, rule: rule) {
+        if let rejection = check11dInspectorIdentity(resolved.canonical, target: target, rule: rule) {
             return (.rejected(rejection), [])
         }
 
@@ -670,7 +675,13 @@ public struct SafetyGate: Sendable {
     /// - `lightroomPreviews`: the exact catalog `<name>.lrcat` is a regular file beside
     ///   `<name> Previews.lrdata` (not merely any catalog);
     /// - `appUserCachesUnknownOwner`: the folder holds no `com.apple.*` entry and can be listed.
-    private func check11dInspectorIdentity(_ canonical: CanonicalPath, rule: Rule) -> SafetyRejection? {
+    /// - `xcodeExtraInstalls` / `macOSInstallers` (review M6): the bundle's `Contents/Info.plist` is
+    ///   re-read and its `CFBundleIdentifier` must be exactly the recorded owner AND Xcode's
+    ///   (`com.apple.dt.Xcode`) or an Apple installer's (`com.apple.InstallAssistant.*`) — an Apple-signed
+    ///   app of another kind (Keynote, …) can never be moved under these rules;
+    /// - `orphanedLaunchAgents` (review M6): the plist still declares exactly the confirmed Label, no
+    ///   other agent plist declares it, and its program is still proven missing.
+    private func check11dInspectorIdentity(_ canonical: CanonicalPath, target: ScanTarget, rule: Rule) -> SafetyRejection? {
         guard case .inspector(let inspector) = rule.discovery else { return nil }
         let problem: String?
         switch inspector {
@@ -681,10 +692,45 @@ public struct SafetyGate: Sendable {
             problem = LightroomPreviewsInspector.identityProblem(target: canonical, fileSystem: environment.fileSystem)
         case .appUserCachesUnknownOwner:
             problem = UnknownOwnerCachesInspector.contentsProblem(target: canonical, fileSystem: environment.fileSystem)
+        case .xcodeExtraInstalls, .macOSInstallers:
+            problem = Self.appBundleIdentityProblem(canonical.path, inspector: inspector, owner: target.owningBundleID,
+                                                    fileSystem: environment.fileSystem)
+        case .orphanedLaunchAgents:
+            problem = OrphanedLaunchAgentsInspector.orphanProblem(path: canonical.path, expectedLabel: target.owningBundleID,
+                                                                  environment: environment)
         default:
             problem = nil
         }
         return problem.map { .doesNotMatchRule(detail: $0) }
+    }
+
+    /// Why the `.app` at `path` is not the bundle the whole-app rule may move (fail closed: an
+    /// unreadable Info.plist or a missing owner is a problem).
+    public static func appBundleIdentityProblem(_ path: String, inspector: InspectorID, owner: String?,
+                                         fileSystem: any FileSystemProbe) -> String? {
+        guard let owner, !owner.isEmpty else { return "The app's bundle identifier was not recorded" }
+        guard let plist = AppBundleReader.infoPlist(path, fileSystem: fileSystem),
+              let bundleID = AppBundleReader.bundleIdentifier(plist) else {
+            return "The app's Info.plist could not be read"
+        }
+        guard PathComparison.normalize(bundleID) == PathComparison.normalize(owner) else {
+            return "The app's bundle identifier (\(bundleID)) is not the one that was reviewed"
+        }
+        switch inspector {
+        case .xcodeExtraInstalls:
+            guard PathComparison.normalize(bundleID) == PathComparison.normalize(XcodeExtraInstallsInspector.xcodeBundleID) else {
+                return "This app is not Xcode (\(bundleID))"
+            }
+        case .macOSInstallers:
+            let prefix = PathComparison.normalize(String(RuleCatalog.macOSInstallerBundleIDPattern.dropLast()))
+            let normalized = PathComparison.normalize(bundleID)
+            guard normalized.hasPrefix(prefix), normalized.count > prefix.count else {
+                return "This app is not a macOS installer (\(bundleID))"
+            }
+        default:
+            return "Not a whole-app rule"
+        }
+        return nil
     }
 
     // MARK: - Check 11c
@@ -798,7 +844,15 @@ public struct SafetyGate: Sendable {
     // MARK: - Check 14
 
     private func check14UserExclusions(candidates: [CanonicalPath]) -> SafetyRejection? {
-        for exclusion in userExclusions {
+        // SAFETY-DECISION (review M7): exclusions the user adds while this gate is in use (Settings
+        // stays usable during a cleanup) are read live, so an item excluded mid-run is skipped at its
+        // execute-time check. Live exclusions only ever ADD to the ones captured at creation; removing
+        // an exclusion never un-excludes anything for a gate that already exists.
+        var exclusionsToCheck = userExclusions
+        for exclusion in liveExclusions?.current ?? [] where !exclusionsToCheck.contains(exclusion) {
+            exclusionsToCheck.append(exclusion)
+        }
+        for exclusion in exclusionsToCheck {
             var forms: [CanonicalPath] = []
             switch canonicalizer.lexical(exclusion) {
             case .success(let lexical):
@@ -849,5 +903,36 @@ public struct SafetyGate: Sendable {
 
     static func looksLikePath(_ value: String) -> Bool {
         value.hasPrefix("/") || value.hasPrefix("~") || value.hasPrefix("{HOME}")
+    }
+}
+
+// MARK: - Live exclusions
+
+/// A thread-safe, add-only list of user exclusions that a `SafetyGate` reads at every check 14.
+///
+/// AppState hands one to the execute-time gate and appends every exclusion the user adds while a
+/// cleanup runs, so the Executor's TOCTOU re-validation honours it for every item not yet processed.
+public final class LiveExclusions: @unchecked Sendable {
+    private let lock = NSLock()
+    private var paths: [String] = []
+
+    public init(_ paths: [String] = []) {
+        self.paths = []
+        for path in paths { add(path) }
+    }
+
+    /// Every exclusion added so far (in insertion order, without duplicates).
+    public var current: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return paths
+    }
+
+    /// Adds `path` (no-op when empty or already present).
+    // SAFETY-DECISION: there is deliberately no `remove`: a gate in use never loses an exclusion.
+    public func add(_ path: String) {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        if !paths.contains(trimmed) { paths.append(trimmed) }
     }
 }

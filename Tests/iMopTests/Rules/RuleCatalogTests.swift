@@ -202,7 +202,6 @@ struct RuleCatalogTests {
                         // Spec §5.3: command actions are not restorable, and the rule text says so.
                         try TestSuite.assertTrue(rule.whatYouLose.contains("cannot be undone"), "\(rule.id): \(rule.whatYouLose)")
                         try TestSuite.assertTrue(rule.whatYouLose.contains("nothing can be restored"), rule.id)
-                    default: throw TestError("\(rule.id): unexpected action \(rule.action)")
                     }
                     try TestSuite.assertTrue(rule.minDepthBelowRoot >= 1, rule.id)
                     for root in rule.allowRoots {

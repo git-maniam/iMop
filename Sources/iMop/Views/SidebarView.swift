@@ -1,264 +1,265 @@
 import iMopCore
 import SwiftUI
 
+/// Sidebar (v1.0 visual language): branding with app icon + "iMop" + v1.1 badge, disk gauge,
+/// Full Disk Access card when not granted, and the destinations of spec §9.
 public struct SidebarView: View {
     @Environment(AppState.self) private var appState
 
     public init() {}
 
+    /// Spec §9.2 grouping order.
+    static let categoryOrder: [RuleCategory] = AppState.categoryOrder
+
     public var body: some View {
         VStack(spacing: 0) {
-            // Header / App Branding
-            HStack(spacing: 10) {
-                appIconView
+            branding
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text("iMop")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(.primary)
-
-                        Text("v1.0")
-                            .font(.system(size: 10, weight: .semibold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(Color.blue.opacity(0.12))
-                            .clipShape(Capsule())
-                            .foregroundStyle(.blue)
-                    }
-
-                    Text("Smart macOS Storage Cleaner")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
-            // Storage Gauge
             StorageGaugeView(usage: appState.diskUsage)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
 
-            // Full Disk Access Notification Card (if not granted)
-            if !appState.hasFullDiskAccess {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lock.shield")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.orange)
-                        Text("Full Disk Access")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-
-                    Text("Grant Full Disk Access to allow iMop to scan system logs and orphaned app containers.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button {
-                        appState.openFullDiskAccessSettings()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("Open Settings")
-                                .font(.system(size: 11, weight: .medium))
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 9))
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .padding(.top, 2)
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.orange.opacity(0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-                        )
-                )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+            if appState.permissions.fullDiskAccess != .granted {
+                fullDiskAccessCard
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
             }
 
             Divider()
                 .padding(.horizontal, 12)
 
-            // Category Navigation List
-            ScrollView {
-                VStack(spacing: 4) {
-                    // Dashboard Navigation Button
-                    sidebarRow(
-                        title: "Overview",
-                        icon: "gauge.with.needle",
-                        accentColor: .blue,
-                        count: nil,
-                        sizeString: nil,
-                        isSelected: appState.selectedCategory == nil
-                    ) {
-                        appState.selectedCategory = nil
-                    }
-
-                    Divider()
-                        .padding(.vertical, 4)
-
-                    // Categories
-                    ForEach(JunkCategoryType.allCases) { category in
-                        let count = appState.items(for: category).count
-                        let totalSize = appState.totalBytes(for: category)
-                        let sizeString = count > 0 ? ByteFormatter.format(totalSize) : nil
-
-                        sidebarRow(
-                            title: category.rawValue,
-                            icon: category.iconName,
-                            accentColor: color(for: category),
-                            count: count > 0 ? count : nil,
-                            sizeString: sizeString,
-                            isSelected: appState.selectedCategory == category
-                        ) {
-                            appState.selectedCategory = category
-                        }
-                    }
-                }
-                .padding(8)
-            }
-
-            Divider()
-                .padding(.horizontal, 12)
-
-            // Bottom Settings / Options bar
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Toggle("Dry Run Mode", isOn: Binding(
-                        get: { appState.isDryRunEnabled },
-                        set: { appState.isDryRunEnabled = $0 }
-                    ))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-
-                    Spacer()
-
-                    if appState.isDryRunEnabled {
-                        Text("Simulation")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.purple)
-                    }
-                }
-
-                HStack {
-                    Toggle("Permanent Delete", isOn: Binding(
-                        get: { appState.isPermanentDeleteEnabled },
-                        set: { appState.isPermanentDeleteEnabled = $0 }
-                    ))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-
-                    Spacer()
-
-                    Text(appState.isPermanentDeleteEnabled ? "Skip Trash" : "Move to Trash")
-                        .font(.system(size: 10))
-                        .foregroundStyle(appState.isPermanentDeleteEnabled ? .red : .secondary)
-                }
-            }
-            .padding(12)
+            destinationList
         }
-        .frame(minWidth: 240, idealWidth: 260, maxWidth: 300)
+        .frame(minWidth: 240, idealWidth: 260, maxWidth: 320)
         .background(.ultraThinMaterial)
     }
 
-    private func color(for category: JunkCategoryType) -> Color {
-        switch category {
-        case .appRemnants: return .orange
-        case .userCaches: return .blue
-        case .systemLogs: return .indigo
-        case .developer: return .cyan
-        case .trashAndTemp: return .pink
-        }
-    }
+    // MARK: - Branding
 
-    @ViewBuilder
-    private func sidebarRow(
-        title: String,
-        icon: String,
-        accentColor: Color,
-        count: Int?,
-        sizeString: String?,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(isSelected ? .white : accentColor)
-                    .frame(width: 20)
+    private var branding: some View {
+        HStack(spacing: 10) {
+            AppIconImage(size: 34)
+                .accessibilityHidden(true)
 
-                Text(title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? .white : .primary)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(verbatim: "iMop")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.primary)
 
-                Spacer()
-
-                if let size = sizeString {
-                    Text(size)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
-                }
-
-                if let count = count {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .semibold))
+                    Text(verbatim: "v1.1")
+                        .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(isSelected ? Color.white.opacity(0.2) : Color.primary.opacity(0.08))
+                        .padding(.vertical, 1.5)
+                        .background(Color.blue.opacity(0.12))
                         .clipShape(Capsule())
-                        .foregroundStyle(isSelected ? .white : .secondary)
+                        .foregroundStyle(.blue)
+                        .accessibilityLabel("version 1.1")
                 }
+
+                Text("Smart macOS Storage Cleaner")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.blue : Color.clear)
-            )
+
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
     }
 
-    // MARK: - App Icon View
-    private var appIconView: some View {
-        Group {
-            if let iconUrl = Bundle.main.url(forResource: "AppIcon_UI", withExtension: "png") ??
-                             Bundle.module.url(forResource: "AppIcon_UI", withExtension: "png"),
-               let nsImage = NSImage(contentsOf: iconUrl) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 34, height: 34)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .shadow(color: Color.blue.opacity(0.3), radius: 4, x: 0, y: 2)
-            } else {
-                ZStack {
-                    LinearGradient(
-                        colors: [Color.blue, Color.cyan],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .frame(width: 34, height: 34)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .shadow(color: Color.blue.opacity(0.3), radius: 4, x: 0, y: 2)
+    // MARK: - Full Disk Access card (spec §8)
 
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
+    private var fullDiskAccessCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label {
+                Text("Full Disk Access")
+                    .font(.callout.weight(.semibold))
+            } icon: {
+                Image(systemName: "lock.shield")
+                    .foregroundStyle(.orange)
+            }
+
+            Text("Some rules (for example Safari and Mail caches, app containers) are locked until iMop has Full Disk Access. iMop only reads to check — it never writes to probe.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button {
+                    appState.openFullDiskAccessSettings()
+                } label: {
+                    Label("Open Settings", systemImage: "arrow.up.right")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityHint("Opens System Settings, Privacy & Security, Full Disk Access")
+
+                Button("Check Again") {
+                    appState.refreshPermissions()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .accessibilityHint("Checks the Full Disk Access permission again")
+            }
+            .padding(.top, 2)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.orange.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Full Disk Access not granted")
+    }
+
+    // MARK: - Destinations
+
+    private var selectionBinding: Binding<SidebarDestination?> {
+        Binding(
+            get: { appState.destination },
+            set: { newValue in
+                if let newValue { appState.destination = newValue }
+            }
+        )
+    }
+
+    private var destinationList: some View {
+        let lockedRules = appState.ruleStatusesLocked()
+        let unavailableRules = appState.unavailableRules()
+        // Review M7: after a cleanup the totals describe the pre-clean plan, so they are not shown.
+        let isPreClean = appState.phase == .finished
+
+        return List(selection: selectionBinding) {
+            Section {
+                row(title: "Scan", symbol: "sparkle.magnifyingglass", detail: scanRowDetail, count: nil, locked: 0)
+                    .tag(SidebarDestination.scan)
+            }
+
+            Section("Categories") {
+                ForEach(Self.categoryOrder, id: \.self) { category in
+                    let totals = appState.totals(for: category)
+                    let locked = lockedRules.filter { $0.category == category }.count
+                    let unavailable = unavailableRules.filter { $0.rule.category == category }.count
+                    row(
+                        title: category.displayName,
+                        symbol: category.symbolName,
+                        detail: isPreClean ? nil : (totals.count > 0 ? ByteFormatter.format(totals.reclaimable) : nil),
+                        count: isPreClean ? nil : (totals.count > 0 ? totals.count : nil),
+                        locked: locked,
+                        unavailable: unavailable,
+                        selectedCount: totals.selectedCount
+                    )
+                    .tag(SidebarDestination.category(category))
                 }
             }
+
+            Section("Review & Recover") {
+                let advisoryCount = appState.advisoryItems.count
+                row(title: "Advisory", symbol: "info.circle",
+                    detail: nil, count: advisoryCount > 0 ? advisoryCount : nil, locked: 0)
+                    .tag(SidebarDestination.advisory)
+
+                let quarantineCount = appState.quarantineSessions.count
+                row(title: "Quarantine", symbol: "archivebox",
+                    detail: nil, count: quarantineCount > 0 ? quarantineCount : nil, locked: 0,
+                    countNoun: "sessions")
+                    .tag(SidebarDestination.quarantine)
+
+                row(title: "Permissions", symbol: "lock.shield",
+                    detail: appState.permissions.fullDiskAccess == .granted ? nil : "Action needed",
+                    count: nil, locked: lockedRules.count, unavailable: unavailableRules.count)
+                    .tag(SidebarDestination.permissions)
+
+                row(title: "Results", symbol: "checkmark.seal",
+                    detail: nil, count: nil, locked: 0)
+                    .tag(SidebarDestination.results)
+            }
         }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .accessibilityLabel("Destinations")
+    }
+
+    private var scanRowDetail: String? {
+        switch appState.phase {
+        case .scanning: return "Scanning…"
+        case .executing: return "Cleaning…"
+        default: return nil
+        }
+    }
+
+    private func row(
+        title: String,
+        symbol: String,
+        detail: String?,
+        count: Int?,
+        locked: Int,
+        unavailable: Int = 0,
+        selectedCount: Int = 0,
+        countNoun: String = "items"
+    ) -> some View {
+        HStack(spacing: 8) {
+            Label(title, systemImage: symbol)
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            if locked > 0 {
+                Image(systemName: "lock")
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+                    .help("\(locked) rule(s) locked — needs Full Disk Access")
+                    .accessibilityHidden(true)
+            }
+
+            if unavailable > 0 {
+                Image(systemName: "slash.circle")
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+                    .help("\(unavailable) rule(s) not offered in this scan — see the reasons in the list")
+                    .accessibilityHidden(true)
+            }
+
+            if let detail {
+                Text(detail)
+                    .font(.caption.weight(.medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if let count {
+                Text("\(count)")
+                    .font(.caption2.weight(.semibold).monospacedDigit())
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(Capsule())
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rowAccessibilityLabel(title: title, detail: detail, count: count, locked: locked,
+                                                  unavailable: unavailable, selectedCount: selectedCount, countNoun: countNoun))
+    }
+
+    private func rowAccessibilityLabel(title: String, detail: String?, count: Int?, locked: Int,
+                                       unavailable: Int, selectedCount: Int, countNoun: String) -> String {
+        var parts = [title]
+        if let count { parts.append("\(count) \(countNoun)") }
+        if let detail { parts.append(count != nil ? "\(detail) estimated reclaimable" : detail) }
+        if selectedCount > 0 { parts.append("\(selectedCount) selected") }
+        if locked > 0 { parts.append("\(locked) rules locked, needs Full Disk Access") }
+        if unavailable > 0 { parts.append("\(unavailable) rules not offered in this scan") }
+        return parts.joined(separator: ", ")
     }
 }

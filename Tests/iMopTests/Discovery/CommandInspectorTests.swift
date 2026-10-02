@@ -167,7 +167,8 @@ struct CommandInspectorTests {
                 let env = ctx.env
                 try installEverything(env)
                 let catalog = RuleCatalog.load(data: try M2.sourceRulesData(), environment: env.environment)
-                let scanner = SafeCleanScanner(environment: env.environment, catalog: catalog, hasFullDiskAccess: true,
+                let scanner = SafeCleanScanner(environment: env.environment, catalog: catalog,
+                                               inspectors: try M6.fixtureInspectors(env.fixture), hasFullDiskAccess: true,
                                                waivedSystemRoots: [env.fixture.root])
                 let results = await scanner.scan(ruleIDs: ["simulator.unavailable", "simulator.devices.stale"])
                 try TestSuite.assertEqual(results.flatMap(\.targets).count, 2)
@@ -267,6 +268,18 @@ struct CommandInspectorTests {
         await TestSuite.run("Inspectors: Ollama — one item per model with size/modified notes; failures and hostile names → nothing") {
             try await M1.withEnv { env in
                 try installEverything(env)
+                // Review M7: `ollama list` runs only while an Ollama process is already running.
+                env.processes.names = ["launchd", "iMopTests"]
+                let notRunning = try result(try await scan(env, ["ai.ollama"]), "ai.ollama")
+                try TestSuite.assertEqual(notRunning.status, .unavailable(OllamaModelsInspector.notRunningMessage))
+                try TestSuite.assertFalse(env.commands.invocations.contains { $0.arguments == OllamaClient.listArguments },
+                                          "the CLI (which would start Ollama.app) is never run when Ollama is not running")
+                env.processes.failing = true
+                try expectUnavailable(try result(try await scan(env, ["ai.ollama"]), "ai.ollama"), "process list unavailable")
+                try TestSuite.assertFalse(env.commands.invocations.contains { $0.arguments == OllamaClient.listArguments })
+                env.processes.failing = false
+                env.processes.names = ["launchd", "iMopTests", "Ollama", "ollama"]
+
                 let r = try result(try await scan(env, ["ai.ollama"]), "ai.ollama")
                 try TestSuite.assertEqual(r.status, .ok)
                 try TestSuite.assertEqual(r.rule.tier, .yellow)

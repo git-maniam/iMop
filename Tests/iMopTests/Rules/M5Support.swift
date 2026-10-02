@@ -41,9 +41,11 @@ enum M5 {
     }
 
     /// Scanner over the source catalog with the fixture waiver (like the M2 suites).
+    /// Milestone 6: by default the fixture-rooted inspectors (`M6.fixtureInspectors`).
     static func scanner(_ env: FakeEnvironment, catalog: RuleCatalog? = nil,
-                        inspectors: [any Inspector] = SafeCleanScanner.defaultInspectors) throws -> SafeCleanScanner {
-        SafeCleanScanner(environment: env.environment, catalog: try catalog ?? M5.catalog(env), inspectors: inspectors,
+                        inspectors: [any Inspector]? = nil) throws -> SafeCleanScanner {
+        SafeCleanScanner(environment: env.environment, catalog: try catalog ?? M5.catalog(env),
+                         inspectors: try inspectors ?? M6.fixtureInspectors(env.fixture),
                          hasFullDiskAccess: true, waivedSystemRoots: [env.fixture.root])
     }
 

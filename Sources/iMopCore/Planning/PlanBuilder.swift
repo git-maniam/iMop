@@ -137,7 +137,10 @@ public struct PlanBuilder: Sendable {
             // SAFETY-DECISION: spec §9.9 "Always quarantine (never permanently delete in one step)",
             // default ON. With it on, a one-step permanent deletion is not offered at all (shown as
             // blocked with this reason) rather than silently re-routed through a different action.
-            if action == .permanentDelete, settings.alwaysQuarantine {
+            // SAFETY-DECISION (review M6): the persisted setting (`environment.scanSettings`, the one source
+            // of truth) is honoured too, so a caller that passes `alwaysQuarantine: false` cannot override
+            // a setting that is ON (merged like the user exclusions).
+            if action == .permanentDelete, settings.alwaysQuarantine || environment.scanSettings.alwaysQuarantine {
                 return Self.alwaysQuarantineRejection
             }
         case .bootoutAndTrash:

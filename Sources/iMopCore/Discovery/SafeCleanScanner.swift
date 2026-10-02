@@ -144,6 +144,9 @@ public struct SafeCleanScanner: Sendable {
     static let laterMilestoneMessage = "Available in a later milestone"
     static let noProjectRootsMessage = "Choose your project folders in Settings to look for build artifacts"
     static let cancelledMessage = "Scan cancelled"
+    /// Status reason when macOS refused a listing (app-data protection / privacy). AppState treats such
+    /// rules as unavailable for the rest of the session (spec §8).
+    public static let accessDeclinedMessage = "Access was declined"
 
     private let environment: SafeCleanEnvironment
     private let catalog: RuleCatalog
@@ -214,8 +217,8 @@ public struct SafeCleanScanner: Sendable {
     /// SAFETY-DECISION: see `ScanSettings.lastSeenVolumesAfterScan(mounted:)` — a drive that is not
     /// connected now stays remembered (orphan detection stays paused until it is back), and a failed
     /// listing changes nothing.
-    public func updatedLastSeenVolumes() -> [String] {
-        environment.scanSettings.lastSeenVolumesAfterScan(mounted: environment.volumes.mountedVolumes())
+    public func updatedLastSeenVolumes() -> [String]? {
+        environment.scanSettings.lastSeenVolumesAfterScan(mounted: environment.volumes.mountedVolumeIdentities())
     }
 
     /// A file rule and a vendor-command rule that clean the same thing: exactly one of them may offer

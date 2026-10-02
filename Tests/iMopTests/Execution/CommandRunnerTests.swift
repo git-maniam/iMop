@@ -202,7 +202,7 @@ struct CommandRunnerTests {
             }
         }
 
-        await TestSuite.run("CommandRunner: sanitized environment — only PATH (trusted dirs), HOME, USER, LANG; cwd = HOME; stdin = /dev/null") {
+        await TestSuite.run("CommandRunner: sanitized environment — only PATH (trusted dirs), HOME, USER, LANG and the fixed analytics opt-outs; cwd = HOME; stdin = /dev/null") {
             try await withContext { ctx in
                 let second = try ctx.fixture.dir("second", base: .root)
                 chmod(second, 0o755)
@@ -221,7 +221,12 @@ struct CommandRunnerTests {
                     let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
                     variables[String(parts[0])] = parts.count > 1 ? String(parts[1]) : ""
                 }
-                try TestSuite.assertTrue(Set(variables.keys).isSubset(of: ["PATH", "HOME", "USER", "LANG"]), "\(variables.keys.sorted())")
+                try TestSuite.assertTrue(Set(variables.keys).isSubset(of: Set(["PATH", "HOME", "USER", "LANG"]).union(CommandRunner.networkOptOutVariables.keys)),
+                                         "\(variables.keys.sorted())")
+                // Review M7: the fixed analytics / auto-update opt-outs are always passed.
+                for (key, value) in CommandRunner.networkOptOutVariables {
+                    try TestSuite.assertEqual(variables[key], value, key)
+                }
                 // Trusted search directories, then the SIP-protected /usr/bin and /bin (review M4).
                 try TestSuite.assertEqual(variables["PATH"], ctx.bin + ":" + second + ":/usr/bin:/bin")
                 // HOME may be spelled /var/… or /private/var/…; it is the fixture home either way.

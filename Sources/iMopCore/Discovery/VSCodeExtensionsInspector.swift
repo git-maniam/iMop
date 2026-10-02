@@ -182,7 +182,7 @@ public struct VSCodeExtensionsInspector: Inspector {
         let entries: [InspectorWalker.Entry]
         switch walker.list(extensionsDir, device: device) {
         case .absent: return InspectorOutput(candidates: [], status: .ok)
-        case .declined: return InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+        case .declined: return InspectorOutput(candidates: [], status: .unavailable(SafeCleanScanner.accessDeclinedMessage))
         case .entries(let list): entries = list
         }
         // SAFETY-DECISION: without a readable, fully understood extensions.json nothing is offered.

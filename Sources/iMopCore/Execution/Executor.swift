@@ -399,7 +399,7 @@ public actor Executor {
         let target = item.target
         // SAFETY-DECISION: re-read the plist right before acting — it must still name a program that
         // no longer exists (an agent whose binary came back, or that changed, is not touched).
-        if let problem = Self.launchAgentOrphanProblem(path: target.path, fileSystem: environment.fileSystem) {
+        if let problem = Self.launchAgentOrphanProblem(path: target.path, expectedLabel: target.owningBundleID, environment: environment) {
             let rejection = SafetyRejection.preconditionFailed(name: "launchAgentOrphaned", detail: problem)
             await audit(runID, item: item, action: actionName, verdict: "skipped", rejectionReason: rejection.reason)
             return .skipped(rejection)
@@ -455,28 +455,14 @@ public actor Executor {
         return bootoutNotLoadedMessages.contains { text.contains($0) }
     }
 
-    /// Why the LaunchAgent plist at `path` is NOT (or no longer provably) orphaned, or `nil` when it
-    /// still parses exactly like the scan saw it (`OrphanedLaunchAgentsInspector.parseAgent`) and its
-    /// program is still PROVEN missing (`OrphanedLaunchAgentsInspector.programState == .missing`).
-    ///
-    /// SAFETY-DECISION: the scan's own parser and existence proof are reused, so execute is never
-    /// more permissive than discovery: any read / parse problem, a program that exists again, or one
-    /// whose absence cannot be proven (permission, symlink, `/Volumes/…` drive that may only be
-    /// disconnected) means the agent is left alone.
-    static func launchAgentOrphanProblem(path: String, fileSystem: any FileSystemProbe) -> String? {
-        guard let info = fileSystem.lstat(path), info.isRegularFile, !info.isSymlink,
-              info.logicalSize <= maximumLaunchAgentPlistBytes,
-              let plist = DevToolsFileReader.readPlistDictionary(path, fileSystem: fileSystem) else {
+    /// Why the LaunchAgent plist at `path` is NOT (or no longer provably) orphaned, or `nil`; see
+    /// `OrphanedLaunchAgentsInspector.orphanProblem` (the scan's own checks plus the confirmed Label and
+    /// label uniqueness, review M6).
+    static func launchAgentOrphanProblem(path: String, expectedLabel: String?, environment: SafeCleanEnvironment) -> String? {
+        if let info = environment.fileSystem.lstat(path), info.logicalSize > maximumLaunchAgentPlistBytes {
             return "The LaunchAgent could not be read"
         }
-        guard let agent = OrphanedLaunchAgentsInspector.parseAgent(plist) else {
-            return "The LaunchAgent's label or program could not be determined"
-        }
-        switch OrphanedLaunchAgentsInspector.programState(agent.program, fileSystem: fileSystem) {
-        case .missing: return nil
-        case .exists: return "The LaunchAgent's program (\(agent.program)) exists again"
-        case .unknown: return "Could not prove that the LaunchAgent's program (\(agent.program)) is gone"
-        }
+        return OrphanedLaunchAgentsInspector.orphanProblem(path: path, expectedLabel: expectedLabel, environment: environment)
     }
 
     private func actOnFilesystem(_ item: PlanItem, runID: UUID, state: inout RunState) async -> ItemStatus {
@@ -695,6 +681,10 @@ public actor Executor {
             guard RuleCatalog.permanentDeleteAllowList.contains(rule.id) else {
                 return .doesNotMatchRule(detail: "permanent delete is not allowed for this rule")
             }
+            // SAFETY-DECISION (review M6): "Always quarantine" is read from the persisted settings right
+            // before acting, whatever flags the plan was built and confirmed with — a setting that is ON
+            // (or was switched ON after confirmation) blocks every permanent deletion.
+            if environment.scanSettings.alwaysQuarantine { return PlanBuilder.alwaysQuarantineRejection }
             return nil
         case .command(let spec, let argument):
             guard rule.action == .command(spec) else { return .doesNotMatchRule(detail: "planned command does not match rule") }
@@ -804,16 +794,12 @@ public actor Executor {
         }
     }
 
-    /// Spec §8: shown when the Trash refuses an app bundle (App Management not granted).
-    public static let appManagementPermissionMessage =
-        "App Management permission is needed to move apps to the Trash. Allow iMop in System Settings › Privacy & Security › App Management, then try again."
+    /// Spec §8: shown when the Trash refuses an app bundle (App Management not granted). One source
+    /// of truth: `AppManagementProbe`.
+    public static let appManagementPermissionMessage = AppManagementProbe.permissionNeededMessage
 
     /// `true` when the last path component is a `.app` bundle name.
-    static func isAppBundlePath(_ path: String) -> Bool {
-        guard let name = path.split(separator: "/").last else { return false }
-        let lowered = PathComparison.normalize(String(name))
-        return lowered.hasSuffix(".app") && lowered.count > ".app".count
-    }
+    static func isAppBundlePath(_ path: String) -> Bool { AppManagementProbe.isAppBundlePath(path) }
 
     // MARK: - Reporting
 

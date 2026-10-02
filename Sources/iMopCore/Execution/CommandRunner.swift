@@ -12,7 +12,8 @@ import Foundation
 ///   There is no shell, no shell flag, no C-library shell helpers, no privilege escalation.
 /// - Every invocation must exactly match an entry of `CommandAllowList` for its purpose.
 /// - The child gets a sanitized environment (`PATH` = trusted directories that pass the directory
-///   checks at run time plus SIP-protected `/usr/bin` and `/bin`, `HOME`, `USER`, `LANG`),
+///   checks at run time plus SIP-protected `/usr/bin` and `/bin`, `HOME`, `USER`, `LANG`, and fixed
+///   analytics / auto-update opt-outs),
 ///   `/dev/null` as stdin and `HOME` as working directory.
 /// - stdout/stderr are drained concurrently and truncated at 64 KB each (on a UTF-8 boundary); a
 ///   hard timeout terminates the child's whole process group (SIGTERM, then SIGKILL after a grace
@@ -405,9 +406,24 @@ public struct CommandRunner: CommandRunning {
 
     var sanitizedPath: String { sanitizedPathDirectories().joined(separator: ":") }
 
-    /// SAFETY-DECISION: the child sees only PATH (trusted directories), HOME, USER and LANG.
+    /// Documented opt-outs that stop allow-listed vendor tools from contacting their own services on
+    /// their own (usage analytics, self-update checks).
+    ///
+    /// SAFETY-DECISION (review M7, recorded in SAFETY.md › Spec deviations): spec §5.3 lists only PATH,
+    /// HOME, USER and LANG. These fixed, non-secret values are added because they can only make a tool
+    /// do LESS (no analytics upload, no auto-update); they never change what a command cleans.
+    public static let networkOptOutVariables: [String: String] = [
+        "FLUTTER_SUPPRESS_ANALYTICS": "true",
+        "HOMEBREW_NO_ANALYTICS": "1",
+        "HOMEBREW_NO_AUTO_UPDATE": "1",
+        "DO_NOT_TRACK": "1",
+    ]
+
+    /// SAFETY-DECISION: the child sees only PATH (trusted directories), HOME, USER, LANG and the fixed
+    /// `networkOptOutVariables`.
     func sanitizedEnvironment() -> [String: String] {
         var environment: [String: String] = ["PATH": sanitizedPath, "HOME": homePath]
+        environment.merge(Self.networkOptOutVariables) { current, _ in current }
         let inherited = ProcessInfo.processInfo.environment
         if let user = inherited["USER"].flatMap(Self.safeEnvironmentValue) ?? Self.loginName() {
             environment["USER"] = user

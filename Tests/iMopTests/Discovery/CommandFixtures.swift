@@ -508,6 +508,7 @@ struct CommandClientTests {
             try TestSuite.assertEqual(disagree.candidates.count, 0)
             try TestSuite.assertTrue(env.commands.invocations.allSatisfy { CommandAllowList.matches(tool: "docker", arguments: $0.arguments, purpose: .readOnly) || CommandAllowList.matches(tool: "ollama", arguments: $0.arguments, purpose: .readOnly) })
 
+            env.processes.names.append("ollama")
             let or = rule("ai.ollama", tier: .yellow, inspector: .ollamaModels, tool: "ollama", args: ["rm", "{ITEM}"], pre: [])
             let o = await OllamaModelsInspector().discover(rule: or, environment: env.environment)
             try TestSuite.assertEqual(o.candidates.map(\.kind), CommandFixtures.ollamaOfferedNames.map { .commandItem(argument: $0) })

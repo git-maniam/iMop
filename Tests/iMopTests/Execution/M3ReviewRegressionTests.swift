@@ -276,7 +276,11 @@ struct M3ReviewRegressionTests {
                 } catch let error as ConfirmationError {
                     try TestSuite.assertEqual(error, .permanentDeleteBlockedByAlwaysQuarantine(target.id))
                 }
-                // OFF in Settings: offered (not preselected) and confirmable once acknowledged.
+                // OFF in Settings: offered (not preselected) and confirmable once acknowledged. Review M6: the
+                // persisted setting still ON blocks it whatever the caller passes.
+                let stillOn = await M3.plan(ctx, [(rule, [target])], settings: PlanSettings(alwaysQuarantine: false))
+                try TestSuite.assertEqual(stillOn.items[0].planVerdict, .rejected(PlanBuilder.alwaysQuarantineRejection))
+                ctx.env.scanSettings.alwaysQuarantine = false
                 let off = await M3.plan(ctx, [(rule, [target])], settings: PlanSettings(alwaysQuarantine: false))
                 try TestSuite.assertFalse(off.alwaysQuarantine)
                 try TestSuite.assertTrue(off.items[0].isActionable)

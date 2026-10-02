@@ -428,8 +428,9 @@ public struct PreconditionEvaluator: Sendable {
 
     // MARK: - OrphanDetector (spec §6.9, Milestone 6)
 
-    /// Conditions 2, 3 and 4 of spec §6.9 (plus the identifier shape, Apple prefix and disconnected
-    /// drives) for `target.owningBundleID`, re-checked at plan AND execute time by the OrphanDetector's
+    /// Conditions 2, 3 and 4 of spec §6.9 (plus the identifier shape, Apple prefix, disconnected
+    /// drives, Setapp, background jobs and — for Group Containers — app groups / Team IDs; review M6)
+    /// for `target.owningBundleID` at `target.path`, re-checked at plan AND execute time by the OrphanDetector's
     /// own evaluator (`OrphanEvaluator.stillOrphaned`), so scan and execute share one implementation.
     ///
     /// SAFETY-DECISION: fails closed — no owner, an owner that is not an orphan-candidate identifier
@@ -441,7 +442,7 @@ public struct PreconditionEvaluator: Sendable {
               RuleTargetMatcher.isOrphanCandidateIdentifier(owner) else {
             return (false, "The app this belongs to is unknown — treated as installed")
         }
-        let outcome = await OrphanEvaluator.preconditionOutcome(owningBundleID: owner, environment: environment)
+        let outcome = await OrphanEvaluator.preconditionOutcome(owningBundleID: owner, targetPath: target.path, environment: environment)
         return (outcome.passed, outcome.detail)
     }
 

@@ -162,7 +162,9 @@ struct PlanTests {
                 let h = M3.target(ctx.env, rule: huge, path: try M3.cacheItem(ctx.env, "H"))
                 let d = M3.target(ctx.env, rule: deleter, path: try M3.cacheItem(ctx.env, "D"))
                 let c = M3.commandTarget(rule: command, path: ctx.home)
-                // "Always quarantine" OFF in the plan so the permanent delete is a candidate at all.
+                // "Always quarantine" OFF in the plan (and, review M6, in the persisted settings) so the
+                // permanent delete is a candidate at all.
+                ctx.env.scanSettings.alwaysQuarantine = false
                 let plan = await M3.plan(ctx, [(green, [g]), (red, [r]), (huge, [h]), (deleter, [d]), (command, [c])],
                                          settings: PlanSettings(alwaysQuarantine: false))
                 for id in [g.id, r.id, d.id, c.id] {

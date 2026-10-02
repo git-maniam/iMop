@@ -128,8 +128,12 @@ public struct AdvisoryInspector: Inspector {
             notes.append("Maximum size of the disk image: \(CommandDiscovery.formatBytes(max(0, info.logicalSize))).")
             notes += [
                 "Docker Desktop keeps all images, containers and volumes inside this single disk image. It does not shrink automatically when you delete them.",
-                "To reclaim space, use Docker Desktop's own settings: Settings › Resources › Advanced (disk usage limit), or Troubleshoot › Clean / Purge data.",
-                "Never delete or move Docker.raw yourself — all your containers and volumes would be lost.",
+                // SAFETY-DECISION (review M6): the non-destructive route comes first; the two Docker
+                // Desktop options that recreate the disk image are named only together with the
+                // plain statement that they delete every image, container and volume.
+                "To reclaim space without losing data, remove what you no longer need from inside Docker: the Docker cleanup items in iMop, or unused images and stopped containers in Docker Desktop. The command docker system df shows what uses the space. Docker Desktop then returns the freed space to macOS, which can take a few minutes.",
+                "Warning: lowering the disk size limit (Settings › Resources › Advanced) and Troubleshoot › Clean / Purge data both delete and recreate this disk image — ALL images, containers and volumes, including any databases in them, are lost.",
+                "Never delete or move Docker.raw yourself — all your images, containers and volumes would be lost.",
                 Self.neverActs,
             ]
             candidates.append(DiscoveredCandidate(advisoryPath: image, displayName: "Docker Desktop disk image",

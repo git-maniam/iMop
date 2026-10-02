@@ -6,11 +6,12 @@ import Foundation
 // Caches, HTTPStorages, WebKit}/<identifier>` ONLY when all eight conditions of spec §6.9 hold. Every
 // condition is a separate function returning an `OrphanBlock` (the reason it blocks orphan status) and
 // FAILS CLOSED: an error, timeout or unknown answer blocks. The same `OrphanEvaluator` re-checks
-// conditions 1–4 (and the volume part of 8) at execute time for `Precondition.stillOrphaned`.
+// conditions 1–5 and 8 (plus the background-job check) at execute time for `Precondition.stillOrphaned`.
 //
-// It only reads: the file system through `SafeCleanEnvironment.fileSystem`, LaunchServices / Spotlight,
-// running apps / processes, code-signing information, and the read-only `pkgutil --pkgs` listing. It
-// never modifies anything. The Scanner and SafetyGate re-validate every candidate (deny-list wins:
+// It only reads: the file system through `SafeCleanEnvironment.fileSystem` (incl. app bundles' Info.plist
+// and the launchd agent / daemon folders), LaunchServices / Spotlight, running apps / processes,
+// mounted volumes, code-signing information, and the read-only `pkgutil --pkgs` listing. It never
+// modifies anything. The Scanner and SafetyGate re-validate every candidate (deny-list wins:
 // HTTPStorages and com.apple.* are never offered).
 
 // MARK: - Public model
@@ -57,9 +58,11 @@ public enum OrphanLocation: String, Sendable, CaseIterable, Hashable {
 public enum OrphanCondition: Int, Sendable, CaseIterable, Hashable, Comparable {
     /// 1. Not `com.apple.*` (also `group.com.apple.*`), not deny-listed.
     case notAppleOrDenied = 1
-    /// 2. No app registered with LaunchServices AND Spotlight finds none on any mounted volume.
+    /// 2. No app registered with LaunchServices AND Spotlight finds none on any mounted volume, no app
+    ///    of the same developer is installed, and no enumerated app bundle carries the identifier.
     case notInstalled = 2
-    /// 3. No running app / process related to the identifier.
+    /// 3. No running app / process related to the identifier, and no installed background job
+    ///    (LaunchAgent / LaunchDaemon) of the same developer whose program still exists.
     case notRunning = 3
     /// 4. Not referenced by a package receipt (`pkgutil --pkgs`).
     case noPackageReceipt = 4
@@ -140,12 +143,17 @@ public struct OrphanEvaluator: Sendable {
     public static let pkgutilPath = "/usr/sbin/pkgutil"
     public static let pkgutilArguments = ["--pkgs"]
     static let pkgutilTimeout: TimeInterval = 30
-    /// Condition 5: where installed apps are enumerated (`{HOME}` is expanded).
-    public static let defaultApplicationRoots = ["/Applications", "/Applications/Utilities", "{HOME}/Applications", "/System/Applications"]
+    /// Conditions 2 and 5: where installed apps are enumerated (`{HOME}` is expanded); plus
+    /// `<volumes>/<name>/Applications` of every mounted volume.
+    public static let defaultApplicationRoots = SystemLocations.standard.applicationRoots
     /// Roots that always exist on macOS: one that is missing or unreadable means "cannot evaluate".
-    public static let defaultRequiredApplicationRoots = ["/Applications", "/System/Applications"]
+    public static let defaultRequiredApplicationRoots = SystemLocations.standard.requiredApplicationRoots
     /// Condition 8: the Setapp subscription-store folder.
-    public static let defaultSetappDirectory = "/Applications/Setapp"
+    public static let defaultSetappDirectory = SystemLocations.standard.setappDirectory
+    /// Condition 2: SAFETY-DECISION (review M6) — apps every Mac has, in the system and the data volume.
+    /// If Spotlight finds either of them nowhere, Spotlight is not indexing (off, rebuilding, excluded)
+    /// and an empty answer for any other app proves nothing.
+    public static let spotlightSanityBundleIDs = ["com.apple.finder", "com.apple.Safari"]
     /// Condition 5: SAFETY-DECISION — more installed apps than this cannot be evaluated (fail closed).
     public static let maximumInstalledApps = 3_000
     /// Condition 2: at most this many identifier forms are looked up per identifier.
@@ -168,14 +176,19 @@ public struct OrphanEvaluator: Sendable {
     let applicationRoots: [String]
     let requiredApplicationRoots: Set<String>
     let setappDirectory: String
+    let volumesDirectory: String
+    /// `{HOME}/Library/LaunchAgents` + the system agent and daemon folders (background-job check).
+    let backgroundJobDirectories: [String]
     private let denyFilter: InspectorDenyFilter
     private let cache = OrphanEvaluationCache()
 
     /// - Parameter catalog: the catalog whose other rules' directories are excluded (condition 6).
     ///   SAFETY-DECISION: without a catalog condition 6 always blocks (the overlap cannot be ruled out).
+    ///   The application roots, Setapp, volume and launchd folders are `environment.systemLocations`.
     public init(environment: SafeCleanEnvironment, catalog: RuleCatalog? = nil) {
-        self.init(environment: environment, catalog: catalog, applicationRoots: Self.defaultApplicationRoots,
-                  requiredApplicationRoots: Self.defaultRequiredApplicationRoots, setappDirectory: Self.defaultSetappDirectory)
+        let locations = environment.systemLocations
+        self.init(environment: environment, catalog: catalog, applicationRoots: locations.applicationRoots,
+                  requiredApplicationRoots: locations.requiredApplicationRoots, setappDirectory: locations.setappDirectory)
     }
 
     /// Test-only: fixture application folders instead of the real `/Applications` etc.
@@ -188,6 +201,10 @@ public struct OrphanEvaluator: Sendable {
         self.applicationRoots = applicationRoots.map { $0.replacingOccurrences(of: "{HOME}", with: home) }
         self.requiredApplicationRoots = Set(requiredApplicationRoots.map { $0.replacingOccurrences(of: "{HOME}", with: home) })
         self.setappDirectory = setappDirectory.replacingOccurrences(of: "{HOME}", with: home)
+        let locations = environment.systemLocations
+        self.volumesDirectory = locations.volumesDirectory.replacingOccurrences(of: "{HOME}", with: home)
+        self.backgroundJobDirectories = ([home + "/Library/LaunchAgents"] + locations.launchAgentDirectories + locations.launchDaemonDirectories)
+            .map { $0.replacingOccurrences(of: "{HOME}", with: home) }
         self.denyFilter = InspectorDenyFilter(environment: environment)
     }
 
@@ -201,17 +218,22 @@ public struct OrphanEvaluator: Sendable {
         if let block = checkGroupContainerUnclaimed(candidate) { return block }
         if let block = checkNoMissingAppLocation(identifier: candidate.identifier) { return block }
         if let block = checkNotRunning(identifier: candidate.identifier) { return block }
+        if let block = checkNoBackgroundJob(identifier: candidate.identifier) { return block }
         if let block = checkNotInstalled(identifier: candidate.identifier) { return block }
         if let block = await checkNoPackageReceipt(identifier: candidate.identifier) { return block }
         return nil
     }
 
     /// Execute-time re-check for `Precondition.stillOrphaned`: identifier shape, condition 1 (Apple),
-    /// the volume part of condition 8, and conditions 3, 2 and 4. `nil` when still orphaned.
+    /// condition 8 (disconnected drives AND Setapp), condition 5 (Group Containers), conditions 3
+    /// (incl. background jobs), 2 and 4. `nil` when still orphaned.
     ///
     /// SAFETY-DECISION: more than the agreed 2, 3, 4 is re-checked (Apple prefix, identifier shape,
-    /// disconnected drives) because they are cheap and can only make the result more conservative.
-    public func stillOrphaned(identifier: String) async -> OrphanBlock? {
+    /// disconnected drives, Setapp, app groups / Team IDs — review M6) because each can only make the
+    /// result more conservative. Condition 7 is its own `olderThan` precondition; condition 6 and the
+    /// deny-list are re-checked by SafetyGate (allow-roots, shapes, deny-list).
+    public func stillOrphaned(_ candidate: OrphanCandidate) async -> OrphanBlock? {
+        let identifier = candidate.identifier
         let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed == identifier else {
             return OrphanBlock(.notKnownTool, "The app this item belonged to is unknown")
@@ -220,23 +242,51 @@ public struct OrphanEvaluator: Sendable {
             return OrphanBlock(.notKnownTool, "“\(identifier)” is not an app identifier")
         }
         if let block = checkNotApple(identifier: identifier) { return block }
-        if let block = checkVolumesConnected() { return block }
+        if let block = checkNoMissingAppLocation(identifier: identifier) { return block }
+        if let block = checkGroupContainerUnclaimed(candidate) { return block }
         if let block = checkNotRunning(identifier: identifier) { return block }
+        if let block = checkNoBackgroundJob(identifier: identifier) { return block }
         if let block = checkNotInstalled(identifier: identifier) { return block }
         if let block = await checkNoPackageReceipt(identifier: identifier) { return block }
         return nil
     }
 
-    /// `Precondition.stillOrphaned` outcome for a target's owning identifier (fail closed: `nil` /
-    /// empty fails).
-    public static func preconditionOutcome(owningBundleID: String?, environment: SafeCleanEnvironment) async -> (passed: Bool, detail: String) {
+    /// `Precondition.stillOrphaned` outcome for a target (fail closed: no owner, or a path that is not
+    /// exactly `{HOME}/Library/<location>/<owner>` (Preferences: `<owner>.plist`), fails).
+    ///
+    /// SAFETY-DECISION (review M6): the location is derived from the target path so the location-specific
+    /// checks (Group Containers: app groups / Team IDs) run at execute time too; a path whose location
+    /// cannot be derived is never treated as orphaned.
+    public static func preconditionOutcome(owningBundleID: String?, targetPath: String,
+                                           environment: SafeCleanEnvironment) async -> (passed: Bool, detail: String) {
         guard let owner = owningBundleID, !owner.isEmpty else {
             return (false, "The app this item belonged to is unknown")
         }
-        if let block = await OrphanEvaluator(environment: environment).stillOrphaned(identifier: owner) {
+        guard let candidate = candidate(forTargetPath: targetPath, environment: environment),
+              PathComparison.normalize(candidate.identifier) == PathComparison.normalize(owner) else {
+            return (false, "Could not tell which leftover folder this is")
+        }
+        if let block = await OrphanEvaluator(environment: environment).stillOrphaned(candidate) {
             return (false, block.reason)
         }
         return (true, "Still not installed, not running and not referenced by an installer receipt")
+    }
+
+    /// The candidate for an absolute `{HOME}/Library/<location>/<name>` path (either spelling of the
+    /// home: `/var/…` or `/private/var/…`), or `nil`.
+    static func candidate(forTargetPath rawPath: String, environment: SafeCleanEnvironment) -> OrphanCandidate? {
+        var path = rawPath
+        while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+        var homes = [environment.homePath, environment.homeDirectory.standardizedFileURL.path]
+        for home in homes where home.hasPrefix("/private/") { homes.append(String(home.dropFirst("/private".count))) }
+        for home in homes where !home.isEmpty && path.hasPrefix(home + "/") {
+            let relative = String(path.dropFirst(home.count + 1)).split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            guard relative.count == 3, PathComparison.normalize(relative[0]) == "library",
+                  let location = OrphanLocation.named(relative[1]) else { return nil }
+            let directory = environment.homePath + "/Library/" + location.directoryName
+            return OrphanCandidate.make(name: relative[2], location: location, directory: directory)
+        }
+        return nil
     }
 
     // MARK: Condition 1 — not Apple, not deny-listed
@@ -266,8 +316,20 @@ public struct OrphanEvaluator: Sendable {
     /// Looks up the identifier, its Group-Container core (`group.` / Team ID removed) and their
     /// reverse-DNS prefixes of at least three labels (`com.vendor.app.helper` → `com.vendor.app`).
     /// Every lookup must succeed and find nothing.
+    ///
+    /// SAFETY-DECISION (review M6), all fail closed:
+    /// - Spotlight must be indexing (`spotlightSanityBundleIDs` are found), else its empty answers prove nothing;
+    /// - the `CFBundleIdentifier` of every directly enumerated app bundle (application roots, one folder
+    ///   level down, and `<volume>/Applications` of every mounted volume) is compared too (an app copied
+    ///   in but never launched or indexed is still installed); an unreadable Info.plist is "unknown";
+    /// - any installed app of the same developer (vendor domain, e.g. `com.vendor`) blocks — found among
+    ///   the enumerated apps and with a Spotlight vendor-domain query (sibling helpers such as
+    ///   `com.vendor.EditorLauncher` of an installed `com.vendor.Editor`, or a group container whose
+    ///   owning app lives elsewhere).
     public func checkNotInstalled(identifier: String) -> OrphanBlock? {
-        for form in Self.lookupForms(identifier) {
+        if let why = spotlightUnavailableReason() { return OrphanBlock(.notInstalled, why) }
+        let forms = Self.lookupForms(identifier)
+        for form in forms {
             switch installLookup(form) {
             case .absent: continue
             case .installed(let where_):
@@ -276,7 +338,102 @@ public struct OrphanEvaluator: Sendable {
                 return OrphanBlock(.notInstalled, why)
             }
         }
+        let vendors = Self.vendorDomains(identifier)
+        switch installedApps() {
+        case .failed(let why):
+            return OrphanBlock(.notInstalled, why)
+        case .known(let apps):
+            for app in apps {
+                if let form = forms.first(where: { Self.areRelated(app.bundleID, $0) }) {
+                    return OrphanBlock(.notInstalled, "An app with the identifier \(form) is installed (\(app.path))")
+                }
+                if let vendor = Self.vendorDomain(app.bundleID), vendors.contains(vendor) {
+                    return OrphanBlock(.notInstalled, "\(app.name), from the same developer, is installed (\(app.path))")
+                }
+            }
+        }
+        for vendor in vendors.sorted() {
+            switch vendorLookup(vendor) {
+            case .absent: continue
+            case .installed(let where_):
+                return OrphanBlock(.notInstalled, "An app from the same developer is installed (\(where_))")
+            case .unknown(let why):
+                return OrphanBlock(.notInstalled, why)
+            }
+        }
         return nil
+    }
+
+    /// Vendor domains of the identifier and of its core.
+    static func vendorDomains(_ identifier: String) -> Set<String> {
+        Set([identifier, coreIdentifier(identifier)].compactMap(vendorDomain))
+    }
+
+    /// `nil` when Spotlight answers for every sanity app; otherwise why its answers cannot be trusted.
+    private func spotlightUnavailableReason() -> String? {
+        if let cached = cache.read({ $0.spotlightProblem }) { return cached }
+        var problem: String?
+        for bundleID in Self.spotlightSanityBundleIDs {
+            guard let paths = environment.applications.spotlightApplicationPaths(forBundleIdentifier: bundleID) else {
+                problem = "Spotlight could not confirm that no app with this identifier exists on any drive"
+                break
+            }
+            if paths.isEmpty {
+                problem = "Spotlight does not seem to be indexing this Mac, so an installed app cannot be ruled out"
+                break
+            }
+        }
+        cache.write { $0.spotlightProblem = .some(problem) }
+        return problem
+    }
+
+    /// Spotlight vendor-domain lookup (cached per domain).
+    private func vendorLookup(_ domain: String) -> InstallLookup {
+        let key = "vendor:" + PathComparison.normalize(domain)
+        if let cached = cache.read({ $0.installLookups[key] }) { return cached }
+        let result: InstallLookup
+        if let paths = environment.applications.spotlightApplicationPaths(inVendorDomain: domain) {
+            result = paths.first.map { .installed($0) } ?? .absent
+        } else {
+            result = .unknown("Spotlight could not confirm that no app from this developer is installed")
+        }
+        cache.write { $0.installLookups[key] = result }
+        return result
+    }
+
+    struct InstalledApp: Sendable, Equatable {
+        let path: String
+        let name: String
+        let bundleID: String
+    }
+
+    enum InstalledApps: Sendable, Equatable {
+        case known([InstalledApp])
+        case failed(String)
+    }
+
+    /// Bundle identifiers of every enumerated app (cached). SAFETY-DECISION: an app whose Info.plist or
+    /// `CFBundleIdentifier` cannot be read, or apps that cannot be enumerated completely, mean
+    /// "cannot evaluate".
+    private func installedApps() -> InstalledApps {
+        if let cached = cache.read({ $0.installedApps }) { return cached }
+        let result = readInstalledApps()
+        cache.write { $0.installedApps = result }
+        return result
+    }
+
+    private func readInstalledApps() -> InstalledApps {
+        guard let paths = installedAppPaths() else { return .failed("Could not check which apps are installed") }
+        var apps: [InstalledApp] = []
+        for path in paths {
+            let fileName = (path as NSString).lastPathComponent
+            guard let plist = AppBundleReader.infoPlist(path, fileSystem: environment.fileSystem),
+                  let bundleID = AppBundleReader.bundleIdentifier(plist) else {
+                return .failed("Could not read the identifier of the installed app \(fileName)")
+            }
+            apps.append(InstalledApp(path: path, name: (fileName as NSString).deletingPathExtension, bundleID: bundleID))
+        }
+        return .known(apps)
     }
 
     enum InstallLookup: Sendable, Equatable {
@@ -348,6 +505,45 @@ public struct OrphanEvaluator: Sendable {
             }
         }
         return nil
+    }
+
+    // MARK: Condition 3 (continued) — no installed background job
+
+    /// Blocks when a LaunchAgent / LaunchDaemon (`{HOME}/Library/LaunchAgents`, `/Library/LaunchAgents`,
+    /// `/Library/LaunchDaemons`) whose Label is related to the identifier (or shares its vendor domain)
+    /// is installed and its program still exists (or cannot be proven gone): an on-demand tool without
+    /// an app bundle or receipt may use this data whenever it starts.
+    ///
+    /// SAFETY-DECISION (review M6): fail closed — an unreadable folder or plist blocks every identifier.
+    public func checkNoBackgroundJob(identifier: String) -> OrphanBlock? {
+        let jobs: [OrphanedLaunchAgentsInspector.LaunchdJob]
+        switch backgroundJobs() {
+        case .unreadable(let why):
+            return OrphanBlock(.notRunning, "Could not read every background item definition (\(why))")
+        case .jobs(let list):
+            jobs = list
+        }
+        let forms = [identifier, Self.coreIdentifier(identifier)]
+        let vendors = Self.vendorDomains(identifier)
+        for job in jobs {
+            let related = forms.contains { Self.areRelated(job.label, $0) }
+                || (Self.vendorDomain(job.label).map { vendors.contains($0) } ?? false)
+            guard related else { continue }
+            guard let program = job.program, OrphanedLaunchAgentsInspector.isCleanAbsolutePath(program),
+                  OrphanedLaunchAgentsInspector.programState(program, fileSystem: environment.fileSystem) == .missing else {
+                return OrphanBlock(.notRunning, "A background item of the same developer (\(job.label)) is still installed")
+            }
+        }
+        return nil
+    }
+
+    func backgroundJobListing() -> OrphanedLaunchAgentsInspector.JobListing { backgroundJobs() }
+
+    private func backgroundJobs() -> OrphanedLaunchAgentsInspector.JobListing {
+        if let cached = cache.read({ $0.backgroundJobs }) { return cached }
+        let listing = OrphanedLaunchAgentsInspector.readJobs(in: backgroundJobDirectories, environment: environment)
+        cache.write { $0.backgroundJobs = listing }
+        return listing
     }
 
     // MARK: Condition 4 — no package receipt
@@ -469,10 +665,18 @@ public struct OrphanEvaluator: Sendable {
         return .known(apps)
     }
 
-    /// Top-level `.app` bundles of every application root, plus those one folder level down
-    /// (`/Applications/Setapp/*.app`). `nil` when a required root is missing, a root cannot be listed,
-    /// or there are more than `maximumInstalledApps`.
+    /// Top-level `.app` bundles of every application root and of `<volume>/Applications` of every
+    /// mounted volume (review M6), plus those one folder level down (`/Applications/Setapp/*.app`).
+    /// `nil` when a required root is missing, a root's existence cannot be decided, a root cannot be
+    /// listed, or there are more than `maximumInstalledApps`.
     func installedAppPaths() -> [String]? {
+        if let cached = cache.read({ $0.installedAppPaths }) { return cached }
+        let result = readInstalledAppPaths()
+        cache.write { $0.installedAppPaths = .some(result) }
+        return result
+    }
+
+    private func readInstalledAppPaths() -> [String]? {
         let fs = environment.fileSystem
         var found: [String] = []
         var seen = Set<String>()
@@ -480,12 +684,18 @@ public struct OrphanEvaluator: Sendable {
             if seen.insert(PathComparison.normalize(path)).inserted { found.append(path) }
             return found.count <= Self.maximumInstalledApps
         }
-        for root in applicationRoots {
-            guard let info = fs.lstat(root) else {
+        guard let volumeRoots = volumeApplicationRoots() else { return nil }
+        for root in applicationRoots + volumeRoots {
+            switch Self.presence(of: root, fileSystem: fs) {
+            case .absent:
                 if requiredApplicationRoots.contains(root) { return nil }
                 continue
+            case .unknown:
+                return nil
+            case .present:
+                break
             }
-            guard info.isDirectory, !info.isSymlink, let names = fs.contentsOfDirectory(root) else { return nil }
+            guard let info = fs.lstat(root), info.isDirectory, !info.isSymlink, let names = fs.contentsOfDirectory(root) else { return nil }
             for name in names.sorted() where InspectorWalker.isPlainName(name) && !name.hasPrefix(".") {
                 let child = root + "/" + name
                 if Self.isAppBundleName(name) {
@@ -501,6 +711,40 @@ public struct OrphanEvaluator: Sendable {
             }
         }
         return found
+    }
+
+    /// `<volume>/Applications` for every real directory directly inside `volumesDirectory` (symlinks
+    /// such as `/Volumes/Macintosh HD` → `/` are skipped). `nil` when the volumes folder cannot be read.
+    func volumeApplicationRoots() -> [String]? {
+        let fs = environment.fileSystem
+        switch Self.presence(of: volumesDirectory, fileSystem: fs) {
+        case .absent: return []
+        case .unknown: return nil
+        case .present: break
+        }
+        guard let info = fs.lstat(volumesDirectory), info.isDirectory, !info.isSymlink,
+              let names = fs.contentsOfDirectory(volumesDirectory) else { return nil }
+        var roots: [String] = []
+        for name in names.sorted() where InspectorWalker.isPlainName(name) && !name.hasPrefix(".") {
+            let volume = volumesDirectory + "/" + name
+            guard let volumeInfo = fs.lstat(volume) else { return nil }
+            guard volumeInfo.isDirectory, !volumeInfo.isSymlink else { continue }
+            roots.append(volume + "/Applications")
+        }
+        return roots
+    }
+
+    enum Presence: Sendable, Equatable { case present, absent, unknown }
+
+    /// SAFETY-DECISION (review M6): an `lstat` failure alone is never proof of absence; the parent is
+    /// listed and must not contain the name (an unreadable parent, or a name it lists that cannot be
+    /// `lstat`ed, is unknown).
+    static func presence(of path: String, fileSystem fs: any FileSystemProbe) -> Presence {
+        if fs.lstat(path) != nil { return .present }
+        let parent = (path as NSString).deletingLastPathComponent
+        let name = PathComparison.normalize((path as NSString).lastPathComponent)
+        guard !parent.isEmpty, parent != path, let names = fs.contentsOfDirectory(parent) else { return .unknown }
+        return names.contains { PathComparison.normalize($0) == name } ? .unknown : .absent
     }
 
     static func isAppBundleName(_ name: String) -> Bool {
@@ -646,35 +890,46 @@ public struct OrphanEvaluator: Sendable {
 
     /// Message of the scan status when a drive is missing.
     public static let disconnectedVolumeMessage = "A drive that may contain apps is not connected"
+    /// Message of the scan status before the connected drives were ever recorded.
+    public static let noVolumeBaselineMessage =
+        "iMop has not yet recorded which drives are connected. Connect any drives that hold apps and scan again"
 
-    /// Blocks when the mounted volumes cannot be listed, or any volume of
-    /// `scanSettings.lastSeenVolumes` is not mounted now (or fewer volumes are mounted).
+    /// Blocks when the mounted volumes cannot be listed or identified, when the connected drives were
+    /// never recorded (`scanSettings.lastSeenVolumes == nil`), or when any volume of `lastSeenVolumes`
+    /// (by UUID) is not mounted now.
+    ///
+    /// SAFETY-DECISION (review M6): volumes are compared by UUID, never by mount path (another drive
+    /// can mount under the same name); a mounted volume whose UUID cannot be read blocks; a baseline
+    /// that was never recorded blocks (the first scan only records it).
     public func checkVolumesConnected() -> OrphanBlock? {
-        guard let mounted = environment.volumes.mountedVolumes() else {
+        guard let mounted = environment.volumes.mountedVolumeIdentities() else {
             return OrphanBlock(.noMissingAppLocation, "Could not check which drives are connected, so apps on them cannot be ruled out")
         }
-        let previous = environment.scanSettings.lastSeenVolumes.filter { !$0.isEmpty }
-        let current = Set(mounted.map(Self.volumeKey))
-        let missing = previous.filter { !current.contains(Self.volumeKey($0)) }
-        if !missing.isEmpty || mounted.count < Set(previous.map(Self.volumeKey)).count {
-            let names = missing.map { ($0 as NSString).lastPathComponent }.filter { !$0.isEmpty }
-            let list = names.isEmpty ? "" : " (\(names.joined(separator: ", ")))"
+        guard let previous = environment.scanSettings.lastSeenVolumes else {
+            return OrphanBlock(.noMissingAppLocation, Self.noVolumeBaselineMessage + " — apps on a drive that is not connected would otherwise look deleted.")
+        }
+        if let unidentified = mounted.first(where: { ($0.uuid ?? "").isEmpty }) {
+            let name = (unidentified.path as NSString).lastPathComponent
             return OrphanBlock(.noMissingAppLocation,
-                               "\(Self.disconnectedVolumeMessage)\(list). Connect it and scan again — apps on it would otherwise look deleted.")
+                               "The connected drive “\(name)” could not be identified, so iMop cannot tell whether a drive holding apps is missing")
+        }
+        let current = Set(mounted.compactMap(\.uuid).map(Self.volumeKey))
+        let missing = previous.filter { !$0.isEmpty && !current.contains(Self.volumeKey($0)) }
+        if !missing.isEmpty {
+            return OrphanBlock(.noMissingAppLocation,
+                               "\(Self.disconnectedVolumeMessage). Connect it and scan again — apps on it would otherwise look deleted.")
         }
         return nil
     }
 
-    static func volumeKey(_ path: String) -> String {
-        var trimmed = path
-        while trimmed.count > 1 && trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return PathComparison.normalize(trimmed)
+    static func volumeKey(_ uuid: String) -> String {
+        uuid.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
     /// `lastSeenVolumes` to persist after a scan (delegates to `ScanSettings.lastSeenVolumesAfterScan`,
     /// which only ever adds volumes, so a disconnected drive keeps blocking until it is reconnected).
-    public static func lastSeenVolumesAfterScan(environment: SafeCleanEnvironment) -> [String] {
-        environment.scanSettings.lastSeenVolumesAfterScan(mounted: environment.volumes.mountedVolumes())
+    public static func lastSeenVolumesAfterScan(environment: SafeCleanEnvironment) -> [String]? {
+        environment.scanSettings.lastSeenVolumesAfterScan(mounted: environment.volumes.mountedVolumeIdentities())
     }
 
     enum SetappState: Sendable, Equatable {
@@ -816,6 +1071,12 @@ final class OrphanEvaluationCache: @unchecked Sendable {
         var signatures: OrphanEvaluator.InstalledSignatures?
         var setapp: OrphanEvaluator.SetappState?
         var exclusions: OrphanEvaluator.CatalogExclusions?
+        /// Outer `nil`: not checked yet; inner `nil`: Spotlight is usable.
+        var spotlightProblem: String?? = nil
+        var installedApps: OrphanEvaluator.InstalledApps?
+        /// Outer `nil`: not enumerated yet; inner `nil`: enumeration failed.
+        var installedAppPaths: [String]?? = nil
+        var backgroundJobs: OrphanedLaunchAgentsInspector.JobListing?
     }
 
     private let lock = NSLock()
@@ -842,26 +1103,33 @@ public struct OrphanedAppDataInspector: Inspector {
     public static let ruleID = OrphanEvaluator.ruleID
 
     private let catalog: RuleCatalog?
-    private let applicationRoots: [String]
-    private let requiredApplicationRoots: [String]
-    private let setappDirectory: String
+    /// `nil`: `environment.systemLocations` at discovery time.
+    private let applicationRoots: [String]?
+    private let requiredApplicationRoots: [String]?
+    private let setappDirectory: String?
 
     /// - Parameter catalog: the catalog whose other rules' folders are excluded (condition 6). `nil`
-    ///   loads the bundled catalog at discovery time.
+    ///   loads the bundled catalog at discovery time. The system folders are the environment's
+    ///   `systemLocations`.
     public init(catalog: RuleCatalog? = nil) {
         self.catalog = catalog
-        self.applicationRoots = OrphanEvaluator.defaultApplicationRoots
-        self.requiredApplicationRoots = OrphanEvaluator.defaultRequiredApplicationRoots
-        self.setappDirectory = OrphanEvaluator.defaultSetappDirectory
+        self.applicationRoots = nil
+        self.requiredApplicationRoots = nil
+        self.setappDirectory = nil
+    }
+
+    private init(catalog: RuleCatalog?, applicationRoots: [String]?, requiredApplicationRoots: [String]?, setappDirectory: String?) {
+        self.catalog = catalog
+        self.applicationRoots = applicationRoots
+        self.requiredApplicationRoots = requiredApplicationRoots
+        self.setappDirectory = setappDirectory
     }
 
     /// Test-only: fixture application folders instead of the real `/Applications` etc.
     @_spi(FixtureTesting)
     public init(catalog: RuleCatalog?, applicationRoots: [String], requiredApplicationRoots: [String] = [], setappDirectory: String) {
-        self.catalog = catalog
-        self.applicationRoots = applicationRoots
-        self.requiredApplicationRoots = requiredApplicationRoots
-        self.setappDirectory = setappDirectory
+        self.init(catalog: catalog, applicationRoots: Optional(applicationRoots),
+                  requiredApplicationRoots: Optional(requiredApplicationRoots), setappDirectory: Optional(setappDirectory))
     }
 
     /// `true` when a catalog was injected at init (otherwise the bundled one is loaded).
@@ -869,8 +1137,9 @@ public struct OrphanedAppDataInspector: Inspector {
 
     /// A copy bound to `catalog` (keeps the application roots).
     func with(catalog: RuleCatalog) -> OrphanedAppDataInspector {
-        OrphanedAppDataInspector(catalog: catalog, applicationRoots: applicationRoots,
-                                 requiredApplicationRoots: requiredApplicationRoots, setappDirectory: setappDirectory)
+        OrphanedAppDataInspector(catalog: catalog, applicationRoots: applicationRoots as [String]?,
+                                 requiredApplicationRoots: requiredApplicationRoots as [String]?,
+                                 setappDirectory: setappDirectory as String?)
     }
 
     public var id: InspectorID { .orphanedAppData }
@@ -885,11 +1154,20 @@ public struct OrphanedAppDataInspector: Inspector {
         guard !catalog.rules.isEmpty else {
             return InspectorOutput(candidates: [], status: .unavailable("The rule catalog could not be loaded"))
         }
-        let evaluator = OrphanEvaluator(environment: environment, catalog: catalog, applicationRoots: applicationRoots,
-                                        requiredApplicationRoots: requiredApplicationRoots, setappDirectory: setappDirectory)
-        // SAFETY-DECISION: with a drive missing that may hold apps, NOTHING is proposed.
+        let locations = environment.systemLocations
+        let evaluator = OrphanEvaluator(environment: environment, catalog: catalog,
+                                        applicationRoots: applicationRoots ?? locations.applicationRoots,
+                                        requiredApplicationRoots: requiredApplicationRoots ?? locations.requiredApplicationRoots,
+                                        setappDirectory: setappDirectory ?? locations.setappDirectory)
+        // SAFETY-DECISION: with a drive missing that may hold apps (or the drives never recorded),
+        // NOTHING is proposed.
         if let block = evaluator.checkVolumesConnected() {
             return InspectorOutput(candidates: [], status: .unavailable(block.reason))
+        }
+        // SAFETY-DECISION (review M6): background-job definitions that cannot all be read block every
+        // identifier; say so instead of silently offering nothing.
+        if case .unreadable(let why) = evaluator.backgroundJobListing() {
+            return InspectorOutput(candidates: [], status: .unavailable("Could not read every background item definition (\(why))"))
         }
         let declaredDays = rule.preconditions.compactMap { precondition -> Int? in
             if case .olderThan(let days) = precondition { return days }
@@ -907,8 +1185,12 @@ public struct OrphanedAppDataInspector: Inspector {
         var candidates: [DiscoveredCandidate] = []
         for location in OrphanLocation.allCases {
             guard let directory = walker.descend(from: home, through: location.components, device: device) else { continue }
-            // SAFETY-DECISION: a deny-listed location (HTTPStorages) is not even listed.
-            if denyFilter.isDenied(directory, ruleID: rule.id) || denyFilter.isDenied(directory + "/imop-orphan-probe", ruleID: rule.id) {
+            // SAFETY-DECISION: a deny-listed location (HTTPStorages) is not even listed. The probe is a
+            // hypothetical CHILD: the location folder itself always "contains" protected entries (e.g.
+            // `Library/Containers/com.apple.*`), so testing the folder would skip every location; a
+            // child is denied only when an entry covers the whole location. Every real entry is still
+            // checked on its own (condition 1) and again by the Scanner and SafetyGate.
+            if denyFilter.isDenied(directory + "/imop-orphan-probe", ruleID: rule.id) {
                 continue
             }
             guard case .entries(let entries) = walker.list(directory, device: device) else { continue }
@@ -926,6 +1208,7 @@ public struct OrphanedAppDataInspector: Inspector {
                 let threshold = environment.scanSettings.effectiveAgeThreshold(ruleID: rule.id, declared: days)
                 var notes = [
                     "No installed app with the identifier \(candidate.identifier) was found (LaunchServices and Spotlight, all connected drives).",
+                    "No app from the same developer is installed, and no background item of it is still installed.",
                     "It is not used by a running app or process, not referenced by an installer receipt, and has not changed in over \(threshold) days.",
                 ]
                 if location == .groupContainers {

@@ -131,7 +131,7 @@ public struct AppUserCachesInspector: Inspector {
         let entries: [InspectorWalker.Entry]
         switch walker.list(caches, device: homeStat.device) {
         case .absent: return InspectorOutput(candidates: [], status: .ok)
-        case .declined: return InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+        case .declined: return InspectorOutput(candidates: [], status: .unavailable(SafeCleanScanner.accessDeclinedMessage))
         case .entries(let list): entries = list
         }
 
@@ -177,7 +177,7 @@ public struct AppContainerCachesInspector: Inspector {
         let containerEntries: [InspectorWalker.Entry]
         switch walker.list(containers, device: device) {
         case .absent: return InspectorOutput(candidates: [], status: .ok)
-        case .declined: return InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+        case .declined: return InspectorOutput(candidates: [], status: .unavailable(SafeCleanScanner.accessDeclinedMessage))
         case .entries(let list): containerEntries = list
         }
 
@@ -215,7 +215,7 @@ public struct AppContainerCachesInspector: Inspector {
             }
         }
         if candidates.isEmpty && declined > 0 {
-            return InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+            return InspectorOutput(candidates: [], status: .unavailable(SafeCleanScanner.accessDeclinedMessage))
         }
         return InspectorOutput(candidates: candidates, status: .ok)
     }
@@ -507,7 +507,7 @@ public struct UnknownOwnerCachesInspector: Inspector {
         let entries: [InspectorWalker.Entry]
         switch walker.list(caches, device: device) {
         case .absent: return InspectorOutput(candidates: [], status: .ok)
-        case .declined: return InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+        case .declined: return InspectorOutput(candidates: [], status: .unavailable(SafeCleanScanner.accessDeclinedMessage))
         case .entries(let list): entries = list
         }
 

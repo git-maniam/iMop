@@ -523,6 +523,8 @@ struct ExecutorTests {
             try await M3.withContext { ctx in
                 let rule = M1.rule(id: "trash.empty", tier: .yellow, action: .permanentDelete)
                 let target = M3.target(ctx.env, rule: rule, path: try M3.cacheItem(ctx.env, "Gone"))
+                // Review M6: the persisted setting must be OFF too.
+                ctx.env.scanSettings.alwaysQuarantine = false
                 let plan = await M3.plan(ctx, [(rule, [target])], settings: PlanSettings(alwaysQuarantine: false))
                 try TestSuite.assertTrue(plan.items[0].isActionable, "\(plan.items[0].planVerdict)")
                 try TestSuite.assertFalse(plan.items[0].selectedByDefault)

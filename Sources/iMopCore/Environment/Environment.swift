@@ -79,16 +79,88 @@ public protocol ApplicationLocating: Sendable {
     func applicationURLs(forBundleIdentifier bundleID: String) -> [URL]?
     /// Spotlight `kMDItemCFBundleIdentifier == id` across all mounted volumes. `nil` on error/timeout.
     func spotlightApplicationPaths(forBundleIdentifier bundleID: String) -> [String]?
+    /// Spotlight: every item whose `kMDItemCFBundleIdentifier` is `domain` or starts with `domain.`
+    /// (case-insensitive), across all mounted volumes. `domain` is a two-label vendor domain such as
+    /// `com.vendor`. `nil` on error / timeout / an implausible domain. Used by the OrphanDetector
+    /// (spec §6.9 condition 2): any app of the same developer installed anywhere blocks.
+    func spotlightApplicationPaths(inVendorDomain domain: String) -> [String]?
+}
+
+extension ApplicationLocating {
+    /// SAFETY-DECISION (review M6): a locator that cannot answer vendor-domain queries answers "could
+    /// not evaluate", so nothing is classified as orphaned through it.
+    public func spotlightApplicationPaths(inVendorDomain domain: String) -> [String]? { nil }
+}
+
+/// A volume mounted under `/Volumes` and its identity.
+public struct MountedVolume: Sendable, Hashable {
+    /// Mount point (`/Volumes/<name>`).
+    public var path: String
+    /// `URLResourceKey.volumeUUIDStringKey`; `nil` when it could not be read (FAT, some network shares).
+    public var uuid: String?
+
+    public init(path: String, uuid: String?) {
+        self.path = path
+        self.uuid = uuid
+    }
 }
 
 /// Mounted volume information.
 public protocol VolumeInspecting: Sendable {
     /// Mount points currently listed under `/Volumes`.
     func mountedVolumes() -> [String]?
+    /// The volumes of `mountedVolumes()` with their identity (UUID). `nil` when they cannot be listed.
+    func mountedVolumeIdentities() -> [MountedVolume]?
     /// `volumeAvailableCapacityForImportantUsage` for the volume containing `path`.
     func availableCapacityForImportantUsage(at path: String) -> Int64?
     /// `volumeAvailableCapacity` for the volume containing `path`.
     func availableCapacity(at path: String) -> Int64?
+}
+
+extension VolumeInspecting {
+    /// SAFETY-DECISION (review M6): an inspector that cannot read volume identities reports every
+    /// volume WITHOUT a UUID, which the OrphanDetector treats as "cannot tell which drive this is"
+    /// (nothing is orphaned while such a volume is mounted).
+    public func mountedVolumeIdentities() -> [MountedVolume]? {
+        mountedVolumes().map { paths in paths.map { MountedVolume(path: $0, uuid: nil) } }
+    }
+}
+
+/// Fixed system folders read by the OrphanDetector and the LaunchAgent checks (spec §6.9).
+/// Injectable through `SafeCleanEnvironment.systemLocations` so tests read fixture folders, never the
+/// real machine's apps. Every value is an absolute path; `{HOME}` is expanded by the readers.
+public struct SystemLocations: Sendable, Hashable {
+    /// Where installed apps are enumerated (top level plus one folder level).
+    public var applicationRoots: [String]
+    /// Roots that always exist on macOS: one that is missing or unreadable means "cannot evaluate".
+    public var requiredApplicationRoots: [String]
+    /// The Setapp subscription-store folder.
+    public var setappDirectory: String
+    /// Where external volumes are mounted (`<volumesDirectory>/<name>/Applications` is enumerated too).
+    public var volumesDirectory: String
+    /// System-wide LaunchAgents folders (jobs loaded into every user's GUI domain).
+    public var launchAgentDirectories: [String]
+    /// LaunchDaemons folders.
+    public var launchDaemonDirectories: [String]
+
+    public init(applicationRoots: [String], requiredApplicationRoots: [String], setappDirectory: String,
+                volumesDirectory: String, launchAgentDirectories: [String], launchDaemonDirectories: [String]) {
+        self.applicationRoots = applicationRoots
+        self.requiredApplicationRoots = requiredApplicationRoots
+        self.setappDirectory = setappDirectory
+        self.volumesDirectory = volumesDirectory
+        self.launchAgentDirectories = launchAgentDirectories
+        self.launchDaemonDirectories = launchDaemonDirectories
+    }
+
+    /// The real macOS locations.
+    public static let standard = SystemLocations(
+        applicationRoots: ["/Applications", "/Applications/Utilities", "{HOME}/Applications", "/System/Applications"],
+        requiredApplicationRoots: ["/Applications", "/System/Applications"],
+        setappDirectory: "/Applications/Setapp",
+        volumesDirectory: "/Volumes",
+        launchAgentDirectories: ["/Library/LaunchAgents"],
+        launchDaemonDirectories: ["/Library/LaunchDaemons"])
 }
 
 /// Result of a vendor command run without a shell.
@@ -211,6 +283,8 @@ public struct SafeCleanEnvironment: Sendable {
     public var scanSettings: ScanSettings
     /// Spotlight file search; unavailable (always `nil`) unless injected.
     public var spotlight: any SpotlightSearching
+    /// Fixed system folders (the real ones unless a test injects fixture folders).
+    public var systemLocations: SystemLocations = .standard
 
     public init(
         homeDirectory: URL,
@@ -251,6 +325,13 @@ public struct SafeCleanEnvironment: Sendable {
     public func with(scanSettings: ScanSettings) -> SafeCleanEnvironment {
         var copy = self
         copy.scanSettings = scanSettings
+        return copy
+    }
+
+    /// A copy of this environment with different system folders (tests: fixture folders).
+    public func with(systemLocations: SystemLocations) -> SafeCleanEnvironment {
+        var copy = self
+        copy.systemLocations = systemLocations
         return copy
     }
 

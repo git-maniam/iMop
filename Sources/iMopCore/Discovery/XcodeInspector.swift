@@ -93,7 +93,7 @@ enum XcodeInspectorSupport {
     static let xcodeBundleID = "com.apple.dt.Xcode"
     static let xcodeComponents = ["Library", "Developer", "Xcode"]
     static let cancelled = InspectorOutput(candidates: [], status: .failed("Scan cancelled"))
-    static let declined = InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+    static let declined = InspectorOutput(candidates: [], status: .unavailable(SafeCleanScanner.accessDeclinedMessage))
     static let nothing = InspectorOutput(candidates: [], status: .ok)
 
     /// `(walker, home device, Xcode directory)`, or `nil` when the Xcode directory is absent.

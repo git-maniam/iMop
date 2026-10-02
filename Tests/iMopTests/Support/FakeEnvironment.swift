@@ -294,9 +294,36 @@ final class FakeApplicationLocator: ApplicationLocating, @unchecked Sendable {
         return applicationURLs.first { $0.key.lowercased() == bundleID.lowercased() }?.value ?? []
     }
 
+    /// Review M6: Spotlight indexes the Mac's built-in apps (`OrphanEvaluator.spotlightSanityBundleIDs`)
+    /// unless a test sets this to false (indexing off / rebuilding / excluded).
+    private var _systemAppsIndexed = true
+    var systemAppsIndexed: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _systemAppsIndexed }
+        set { lock.lock(); _systemAppsIndexed = newValue; lock.unlock() }
+    }
+
+    static let builtInSystemApps: [String: String] = [
+        "com.apple.finder": "/System/Library/CoreServices/Finder.app",
+        "com.apple.safari": "/Applications/Safari.app",
+    ]
+
+    private var _vendorQueries: [String] = []
+    var vendorQueries: [String] { lock.lock(); defer { lock.unlock() }; return _vendorQueries }
+
     func spotlightApplicationPaths(forBundleIdentifier bundleID: String) -> [String]? {
         if failing || spotlightFailing { return nil }
-        return spotlightPaths.first { $0.key.lowercased() == bundleID.lowercased() }?.value ?? []
+        if let explicit = spotlightPaths.first(where: { $0.key.lowercased() == bundleID.lowercased() })?.value { return explicit }
+        if systemAppsIndexed, let builtIn = Self.builtInSystemApps[bundleID.lowercased()] { return [builtIn] }
+        return []
+    }
+
+    /// Every `spotlightPaths` entry whose identifier is `domain` or starts with `domain.`.
+    func spotlightApplicationPaths(inVendorDomain domain: String) -> [String]? {
+        lock.lock(); _vendorQueries.append(domain); lock.unlock()
+        if failing || spotlightFailing { return nil }
+        let wanted = domain.lowercased()
+        return spotlightPaths.filter { $0.key.lowercased() == wanted || $0.key.lowercased().hasPrefix(wanted + ".") }
+            .sorted { $0.key < $1.key }.flatMap(\.value)
     }
 }
 
@@ -372,6 +399,25 @@ final class FakeVolumeInspector: VolumeInspecting, @unchecked Sendable {
     }
 
     func mountedVolumes() -> [String]? { volumes }
+
+    /// Review M6: path → UUID overrides (`nil` value = UUID unreadable). Unlisted paths get
+    /// `defaultUUID(for:)`.
+    private var _uuids: [String: String?] = [:]
+    func setUUID(_ uuid: String?, for path: String) {
+        lock.lock(); _uuids[path] = .some(uuid); lock.unlock()
+    }
+
+    static func defaultUUID(for path: String) -> String { "UUID-" + path.uppercased() }
+
+    func mountedVolumeIdentities() -> [MountedVolume]? {
+        guard let paths = volumes else { return nil }
+        lock.lock(); defer { lock.unlock() }
+        return paths.map { path in
+            let uuid: String?
+            if let override = _uuids[path] { uuid = override } else { uuid = Self.defaultUUID(for: path) }
+            return MountedVolume(path: path, uuid: uuid)
+        }
+    }
     func availableCapacityForImportantUsage(at path: String) -> Int64? {
         lock.lock(); defer { lock.unlock() }
         if !_importantCapacityQueue.isEmpty { return _importantCapacityQueue.removeFirst() }
@@ -552,7 +598,15 @@ final class FakeEnvironment: @unchecked Sendable {
     private let lock = NSLock()
     private var _effectiveUserID: UInt32
     private var _userID: UInt32
-    private var _scanSettings: ScanSettings = .default
+    /// `ScanSettings.default` except that the connected drives were already recorded (no external
+    /// volumes): review M6 made a never-recorded baseline (`nil`) block the OrphanDetector, which tests
+    /// of that behaviour set explicitly.
+    private var _scanSettings: ScanSettings = {
+        var settings = ScanSettings.default
+        settings.lastSeenVolumes = []
+        return settings
+    }()
+    private var _systemLocations: SystemLocations?
 
     init(
         fixture: FixtureBuilder,
@@ -601,6 +655,25 @@ final class FakeEnvironment: @unchecked Sendable {
         set { lock.lock(); _scanSettings = newValue; lock.unlock() }
     }
 
+    /// Review M6: system folders read by the OrphanDetector / LaunchAgent checks. Defaults to folders
+    /// below the fixture ROOT (never the real machine's apps or launchd folders); `/Applications` and
+    /// `/System/Applications` stand-ins match `M6.applicationsDirectory` / `systemApplicationsDirectory`.
+    var systemLocations: SystemLocations {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            if let custom = _systemLocations { return custom }
+            let apps = fixture.path("System/Applications-root", base: .root)
+            return SystemLocations(
+                applicationRoots: [apps, apps + "/Utilities", "{HOME}/Applications", fixture.path("System/System-Applications", base: .root)],
+                requiredApplicationRoots: [],
+                setappDirectory: apps + "/Setapp",
+                volumesDirectory: fixture.path("Volumes", base: .root),
+                launchAgentDirectories: [fixture.path("System/Library-LaunchAgents", base: .root)],
+                launchDaemonDirectories: [fixture.path("System/Library-LaunchDaemons", base: .root)])
+        }
+        set { lock.lock(); _systemLocations = newValue; lock.unlock() }
+    }
+
     /// A fresh `SafeCleanEnvironment` value sharing these fakes.
     var environment: SafeCleanEnvironment {
         SafeCleanEnvironment(
@@ -617,7 +690,7 @@ final class FakeEnvironment: @unchecked Sendable {
             codeSignatures: codeSignatures,
             scanSettings: scanSettings,
             spotlight: spotlight
-        )
+        ).with(systemLocations: systemLocations)
     }
 
     /// SafetyGate whose system deny-list entries are waived for the fixture root (it lives under

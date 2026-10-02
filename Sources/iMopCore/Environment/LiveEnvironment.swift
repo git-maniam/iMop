@@ -532,6 +532,35 @@ public struct LiveApplicationLocator: ApplicationLocating {
         return box.paths
     }
 
+    public func spotlightApplicationPaths(inVendorDomain domain: String) -> [String]? {
+        // SAFETY-DECISION: only a plain two-label domain (`com.vendor`) is queried, so it can never
+        // alter the query syntax or match more than that developer's identifiers.
+        guard let queryString = Self.spotlightQueryString(forVendorDomain: domain) else { return nil }
+        let box = SpotlightRequest()
+        let done = DispatchSemaphore(value: 0)
+        Self.spotlightQueue.async {
+            defer { done.signal() }
+            guard !box.isAbandoned else { return }
+            box.finish(Self.runSpotlightQuery(queryString, scopes: nil, shouldContinue: { !box.isAbandoned }))
+        }
+        guard done.wait(timeout: .now() + spotlightTimeout) == .success else {
+            box.abandon()
+            return nil
+        }
+        return box.paths
+    }
+
+    /// `kMDItemCFBundleIdentifier == "<domain>"c || kMDItemCFBundleIdentifier == "<domain>.*"c`, or nil
+    /// unless `domain` is exactly two non-empty labels of ASCII letters, digits and `-`.
+    @_spi(FixtureTesting)
+    public static func spotlightQueryString(forVendorDomain domain: String) -> String? {
+        let labels = domain.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count == 2, domain.count <= 127, labels.allSatisfy({ label in
+            !label.isEmpty && label.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-") }
+        }) else { return nil }
+        return "kMDItemCFBundleIdentifier == \"\(domain)\"c || kMDItemCFBundleIdentifier == \"\(domain).*\"c"
+    }
+
     /// The Spotlight query for `bundleID`, or nil for an implausible identifier.
     ///
     /// SAFETY-DECISION: bundle identifiers are case-insensitive (LaunchServices matches them that
@@ -677,6 +706,22 @@ public struct LiveVolumeInspector: VolumeInspecting {
         return urls.map { $0.standardizedFileURL.path }.filter { path in
             let parts = path.split(separator: "/", omittingEmptySubsequences: true)
             return parts.count >= 2 && LivePathSupport.normalize(String(parts[0])) == "volumes"
+        }
+    }
+
+    /// SAFETY-DECISION (review M6): volumes are identified by `volumeUUIDStringKey`, never by mount
+    /// path alone (two different drives can both mount as `/Volumes/Untitled`); a UUID that cannot be
+    /// read is reported as `nil` (the OrphanDetector then treats the drive as unidentifiable).
+    public func mountedVolumeIdentities() -> [MountedVolume]? {
+        guard let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeUUIDStringKey], options: []) else {
+            return nil
+        }
+        return urls.compactMap { url -> MountedVolume? in
+            let path = url.standardizedFileURL.path
+            let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+            guard parts.count >= 2, LivePathSupport.normalize(String(parts[0])) == "volumes" else { return nil }
+            let uuid = (try? url.resourceValues(forKeys: [.volumeUUIDStringKey]))?.volumeUUIDString
+            return MountedVolume(path: path, uuid: uuid.flatMap { $0.isEmpty ? nil : $0 })
         }
     }
 

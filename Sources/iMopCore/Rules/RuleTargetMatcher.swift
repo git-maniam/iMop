@@ -291,7 +291,7 @@ public struct RuleTargetMatcher: Sendable {
                 && OrphanedAppDataInspector.matchesTargetShape(relative: relative, owner: owner)
 
         case .orphanedLaunchAgents:
-            // Library/LaunchAgents/<name>.plist, never Apple's; a recorded owner (the label) is never Apple's.
+            // Library/LaunchAgents/<name>.plist, never Apple's; the recorded owner (the label) is never Apple's.
             guard rel.count == 3, hasPrefix(["Library", "LaunchAgents"]) else { return false }
             let name = relative[2]
             let suffix = ".plist"
@@ -299,7 +299,10 @@ public struct RuleTargetMatcher: Sendable {
                   !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return false }
             let base = String(name.dropLast(suffix.count))
             if BundleIdentifierHeuristics.isApple(base) || Self.isAppleOrphanIdentifier(base) { return false }
-            if let normalizedOwner, normalizedOwner.hasPrefix("com.apple") { return false }
+            // SAFETY-DECISION (review M6): the owner (the agent's Label, which bootout acts on) is
+            // REQUIRED; the Executor re-reads the plist and requires exactly that Label.
+            guard let normalizedOwner, !normalizedOwner.hasPrefix("com.apple"),
+                  !Self.isAppleOrphanIdentifier(normalizedOwner) else { return false }
             return OrphanedLaunchAgentsInspector.matchesTargetShape(relative: relative)
 
         case .jetbrainsConfig:
@@ -380,9 +383,9 @@ public struct RuleTargetMatcher: Sendable {
 
     /// SAFETY-DECISION (M6): a whole `.app` is a target only as a DIRECT child of `/Applications`
     /// (`xcode.extraInstalls` also `{HOME}/Applications`), never in a subfolder, never hidden, and the
-    /// recorded owner (when present) must be the expected Apple bundle identifier.
-    /// - `xcodeExtraInstalls`: `<name>.app`, owner nil or `com.apple.dt.Xcode`.
-    /// - `macOSInstallers`: `Install macOS <name>.app` in `/Applications` only, owner nil or
+    /// recorded owner (required) must be the expected Apple bundle identifier.
+    /// - `xcodeExtraInstalls`: `<name>.app`, owner exactly `com.apple.dt.Xcode`.
+    /// - `macOSInstallers`: `Install macOS <name>.app` in `/Applications` only, owner
     ///   `com.apple.InstallAssistant.*`.
     /// The bundle itself must still pass `appleSigned`, `notSelectedXcode` and the app-not-running
     /// checks (preconditions) and every SafetyGate check.
@@ -401,13 +404,17 @@ public struct RuleTargetMatcher: Sendable {
                 && PathComparison.normalize(comps[home.components.count]) == "applications"
         }
         switch inspector {
+        // SAFETY-DECISION (review M6): the owner is REQUIRED for both whole-app rules (the inspectors
+        // always record the bundle identifier they read), and SafetyGate check 11d re-reads the bundle's
+        // Info.plist and requires the same identifier right before acting.
         case .xcodeExtraInstalls:
-            guard inSystemApplications || inHomeApplications else { return false }
-            return normalizedOwner == nil || normalizedOwner == PathComparison.normalize(Self.xcodeBundleID)
+            guard inSystemApplications || inHomeApplications, let normalizedOwner else { return false }
+            return normalizedOwner == PathComparison.normalize(Self.xcodeBundleID)
         case .macOSInstallers:
-            guard inSystemApplications, n.hasPrefix("install macos "), n.count > "install macos .app".count else { return false }
+            guard inSystemApplications, n.hasPrefix("install macos "), n.count > "install macos .app".count,
+                  let normalizedOwner else { return false }
             let prefix = PathComparison.normalize(String(RuleCatalog.macOSInstallerBundleIDPattern.dropLast()))
-            return normalizedOwner.map { $0.hasPrefix(prefix) && $0.count > prefix.count } ?? true
+            return normalizedOwner.hasPrefix(prefix) && normalizedOwner.count > prefix.count
         default:
             return false
         }

@@ -48,9 +48,12 @@ struct M2ReviewRegressionTests {
         path.hasPrefix(f.home + "/") ? String(path.dropFirst(f.home.count + 1)) : path
     }
 
-    static func scanner(_ env: FakeEnvironment, catalog: RuleCatalog, inspectors: [any Inspector] = SafeCleanScanner.defaultInspectors,
+    /// Milestone 6: by default the fixture-rooted inspectors (`M6.fixtureInspectors`), so no scan reads
+    /// the real /Applications or /Library.
+    static func scanner(_ env: FakeEnvironment, catalog: RuleCatalog, inspectors: [any Inspector]? = nil,
                         fda: Bool = true) -> SafeCleanScanner {
-        SafeCleanScanner(environment: env.environment, catalog: catalog, inspectors: inspectors,
+        SafeCleanScanner(environment: env.environment, catalog: catalog,
+                         inspectors: inspectors ?? (try? M6.fixtureInspectors(env.fixture)) ?? SafeCleanScanner.defaultInspectors,
                          hasFullDiskAccess: fda, waivedSystemRoots: [env.fixture.root])
     }
 

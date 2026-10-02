@@ -29,13 +29,18 @@ public struct ScanSettings: Sendable, Codable, Hashable {
     /// `effectiveRetentionHours(for:)`.
     public var quarantineRetentionOverrideHours: [String: Int] = [:]
 
-    /// Mount points under `/Volumes` seen by the previous scan (spec §6.9 condition 8). Persisted by
-    /// the UI (Milestone 7); updated after every scan with `lastSeenVolumesAfterScan(mounted:)`.
+    /// UUIDs (`URLResourceKey.volumeUUIDStringKey`) of the volumes under `/Volumes` seen by previous
+    /// scans (spec §6.9 condition 8). Persisted by the UI (Milestone 7); updated after every scan with
+    /// `lastSeenVolumesAfterScan(mounted:)`.
     ///
     /// SAFETY-DECISION: when a volume listed here is not mounted now (or the mounted volumes cannot be
-    /// listed), the OrphanDetector offers NOTHING — apps on a disconnected drive are invisible to
-    /// LaunchServices and Spotlight, so their data would look orphaned.
-    public var lastSeenVolumes: [String] = []
+    /// listed or identified), the OrphanDetector offers NOTHING — apps on a disconnected drive are
+    /// invisible to LaunchServices and Spotlight, so their data would look orphaned.
+    /// SAFETY-DECISION (review M6): `nil` means "never recorded" (first scan, settings reset, older
+    /// settings file), which is NOT the same as "no external drives": while it is `nil` the
+    /// OrphanDetector offers nothing and asks the user to connect their app drives and scan again.
+    /// Volumes are identified by UUID, not by mount path (two drives can share a name).
+    public var lastSeenVolumes: [String]? = nil
 
     public static let defaultArchivesToKeep = 3
     public static let archivesToKeepRange: ClosedRange<Int> = 1...50
@@ -52,7 +57,7 @@ public struct ScanSettings: Sendable, Codable, Hashable {
         userExclusions: [String] = [],
         alwaysQuarantine: Bool = true,
         quarantineRetentionOverrideHours: [String: Int] = [:],
-        lastSeenVolumes: [String] = []
+        lastSeenVolumes: [String]? = nil
     ) {
         self.projectRoots = projectRoots
         self.archivesToKeep = Self.clampArchivesToKeep(archivesToKeep)
@@ -90,16 +95,23 @@ public struct ScanSettings: Sendable, Codable, Hashable {
     ///
     /// SAFETY-DECISION: a volume that was seen before but is not connected now is REMEMBERED (it may
     /// hold apps), so orphan detection stays paused until it is reconnected; a listing that failed
-    /// (`nil`) changes nothing. Newly connected volumes are added.
-    public func lastSeenVolumesAfterScan(mounted: [String]?) -> [String] {
-        let previous = Self.normalizedVolumes(lastSeenVolumes)
+    /// (`nil`) changes nothing. Newly connected volumes are added (by UUID; a volume whose UUID cannot
+    /// be read cannot be recorded). The first successful listing records the baseline (possibly empty).
+    public func lastSeenVolumesAfterScan(mounted: [MountedVolume]?) -> [String]? {
+        let previous = lastSeenVolumes.map(Self.normalizedVolumes)
         guard let mounted else { return previous }
-        return Self.normalizedVolumes(previous + mounted)
+        let current = mounted.compactMap(\.uuid)
+        return Self.normalizedVolumes((previous ?? []) + current)
     }
 
-    /// Non-empty, de-duplicated, sorted.
+    /// Non-empty, de-duplicated (case-insensitively), sorted.
     static func normalizedVolumes(_ volumes: [String]) -> [String] {
-        Array(Set(volumes.filter { !$0.isEmpty })).sorted()
+        var seen = Set<String>()
+        var result: [String] = []
+        for volume in volumes.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !volume.isEmpty {
+            if seen.insert(volume.uppercased()).inserted { result.append(volume) }
+        }
+        return result.sorted()
     }
 
     // MARK: - Codable (tolerant of missing keys; clamps archivesToKeep)
@@ -119,7 +131,8 @@ public struct ScanSettings: Sendable, Codable, Hashable {
             // SAFETY-DECISION: a missing value decodes to the safe default (ON).
             alwaysQuarantine: try c.decodeIfPresent(Bool.self, forKey: .alwaysQuarantine) ?? true,
             quarantineRetentionOverrideHours: try c.decodeIfPresent([String: Int].self, forKey: .quarantineRetentionOverrideHours) ?? [:],
-            lastSeenVolumes: try c.decodeIfPresent([String].self, forKey: .lastSeenVolumes) ?? []
+            // SAFETY-DECISION (review M6): a missing key decodes to `nil` ("never recorded").
+            lastSeenVolumes: try c.decodeIfPresent([String].self, forKey: .lastSeenVolumes)
         )
     }
 
@@ -131,6 +144,6 @@ public struct ScanSettings: Sendable, Codable, Hashable {
         try c.encode(userExclusions, forKey: .userExclusions)
         try c.encode(alwaysQuarantine, forKey: .alwaysQuarantine)
         try c.encode(quarantineRetentionOverrideHours, forKey: .quarantineRetentionOverrideHours)
-        try c.encode(lastSeenVolumes, forKey: .lastSeenVolumes)
+        try c.encodeIfPresent(lastSeenVolumes, forKey: .lastSeenVolumes)
     }
 }

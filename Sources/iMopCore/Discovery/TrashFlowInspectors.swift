@@ -371,7 +371,8 @@ public struct JetBrainsConfigInspector: Inspector {
 // MARK: - trash.empty
 
 /// The immediate children of `{HOME}/.Trash` (spec §6.6 `trash.empty`, Yellow, permanent removal
-/// behind an explicit "Empty Trash" confirmation). The UI groups them into one choice; every child
+/// behind an explicit "Empty Trash" confirmation). AppState groups them into one choice (selected and
+/// deselected together, only through its own confirmation dialog); every child
 /// is still its own target so SafetyGate checks each one.
 public struct TrashContentsInspector: Inspector {
     public static let ruleID = "trash.empty"

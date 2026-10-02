@@ -75,7 +75,24 @@ struct SafeCleanScannerTests {
         "Library/Caches/Google/Chrome/Default/Cache": "com.google.Chrome",
     ]
 
-    static let fullDiskAccessRules: Set<String> = ["browser.safari.cache", "mail.downloads", "apps.containerCaches"]
+    /// Milestone 6 adds the OrphanDetector (it reads Containers / Group Containers), the Trash and the
+    /// iOS backups advisory.
+    static let fullDiskAccessRules: Set<String> = ["browser.safari.cache", "mail.downloads", "apps.containerCaches",
+                                                   "leftovers.appData", "trash.empty", "advisory.iosBackups"]
+
+    /// Milestone 6: rules that need a developer tool no fixture provides here (xcode-select, tmutil)
+    /// report unavailable instead of offering anything.
+    static let unavailableWithoutTools: Set<String> = ["xcode.extraInstalls", "advisory.timeMachineSnapshots"]
+
+    /// Milestone 6: advisory targets are explanation-only: kind .advisory, nothing reclaimable.
+    @MainActor
+    static func checkAdvisory(_ result: RuleScanResult) throws {
+        for target in result.targets {
+            try TestSuite.assertEqual(target.kind, .advisory, result.rule.id)
+            try TestSuite.assertEqual(target.reclaimableBytes, 0, result.rule.id)
+            try TestSuite.assertTrue(target.identity == nil, result.rule.id)
+        }
+    }
 
     /// Never offered by any Green rule: browser/Electron storage that is not cache.
     static let forbiddenComponents: Set<String> = ["local storage", "indexeddb", "service worker", "cookies",
@@ -123,8 +140,9 @@ struct SafeCleanScannerTests {
     @MainActor
     static func makeScanner(_ env: FakeEnvironment, fda: Bool = true, catalog: RuleCatalog? = nil) throws -> SafeCleanScanner {
         let catalog = try catalog ?? RuleCatalog.load(data: M2.sourceRulesData(), environment: env.environment)
-        return SafeCleanScanner(environment: env.environment, catalog: catalog, hasFullDiskAccess: fda,
-                       waivedSystemRoots: [env.fixture.root])
+        return SafeCleanScanner(environment: env.environment, catalog: catalog,
+                                inspectors: try M6.fixtureInspectors(env.fixture), hasFullDiskAccess: fda,
+                                waivedSystemRoots: [env.fixture.root])
     }
 
     @MainActor
@@ -159,13 +177,17 @@ struct SafeCleanScannerTests {
                         try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
                         continue
                     }
-                    if result.rule.usesProjectRoots {
+                    if result.rule.usesProjectRoots || unavailableWithoutTools.contains(result.rule.id) {
                         // Milestone 5: no project roots are configured by default → unavailable, nothing offered.
                         guard case .unavailable = result.status else { throw TestError("\(result.rule.id): \(result.status)") }
                         try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
                         continue
                     }
                     try TestSuite.assertEqual(result.status, .ok, result.rule.id)
+                    if result.rule.tier == .advisory {
+                        try checkAdvisory(result)
+                        continue
+                    }
                     let found = Set(result.targets.map { relative($0.path, f) })
                     try TestSuite.assertEqual(found, expected[result.rule.id] ?? [], result.rule.id)
                     try TestSuite.assertEqual(found.count, result.targets.count, "\(result.rule.id): duplicates")
@@ -178,7 +200,7 @@ struct SafeCleanScannerTests {
                 let f = env.fixture
                 let results = try await makeScanner(env).scan()
                 var seen = 0
-                for result in results {
+                for result in results where result.rule.tier != .advisory {
                     for target in result.targets {
                         seen += 1
                         let rel = relative(target.path, f)
@@ -228,7 +250,8 @@ struct SafeCleanScannerTests {
             try await withScanEnv { env in
                 let f = env.fixture
                 let results = try await makeScanner(env).scan()
-                let all = results.flatMap(\.targets)
+                for result in results where result.rule.tier == .advisory { try checkAdvisory(result) }
+                let all = results.filter { $0.rule.tier != .advisory }.flatMap(\.targets)
                 for target in all {
                     let rel = relative(target.path, f)
                     try TestSuite.assertTrue(target.path.hasPrefix(f.home + "/"), target.path)
@@ -260,9 +283,13 @@ struct SafeCleanScannerTests {
         await TestSuite.run("Scanner: without the fixture waiver the deny-listed temp home yields nothing") {
             try await withScanEnv { env in
                 let catalog = RuleCatalog.load(data: try M2.sourceRulesData(), environment: env.environment)
-                let scanner = SafeCleanScanner(environment: env.environment, catalog: catalog, hasFullDiskAccess: true)
+                let scanner = SafeCleanScanner(environment: env.environment, catalog: catalog,
+                                               inspectors: try M6.fixtureInspectors(env.fixture), hasFullDiskAccess: true)
                 let results = await scanner.scan()
-                try TestSuite.assertEqual(results.flatMap(\.targets).count, 0, "/private/var/folders is deny-listed")
+                // Milestone 6: explanation-only advisory items (never actionable) may still be listed.
+                for result in results where result.rule.tier == .advisory { try checkAdvisory(result) }
+                try TestSuite.assertEqual(results.filter { $0.rule.tier != .advisory }.flatMap(\.targets).count, 0,
+                                          "/private/var/folders is deny-listed")
             }
         }
 
@@ -278,10 +305,13 @@ struct SafeCleanScannerTests {
                         // (.unavailable, no targets); none needs Full Disk Access.
                         try TestSuite.assertTrue(result.status != .lockedNeedsFullDiskAccess, result.rule.id)
                         try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
-                    } else if result.rule.usesProjectRoots {
+                    } else if result.rule.usesProjectRoots || unavailableWithoutTools.contains(result.rule.id) {
                         // Milestone 5: no project roots configured → unavailable (never FDA-locked).
                         guard case .unavailable = result.status else { throw TestError("\(result.rule.id): \(result.status)") }
                         try TestSuite.assertEqual(result.targets.count, 0, result.rule.id)
+                    } else if result.rule.tier == .advisory {
+                        try TestSuite.assertEqual(result.status, .ok, result.rule.id)
+                        try checkAdvisory(result)
                     } else {
                         try TestSuite.assertEqual(result.status, .ok, result.rule.id)
                         try TestSuite.assertEqual(result.targets.count, expected[result.rule.id]?.count ?? 0, result.rule.id)
@@ -364,15 +394,20 @@ struct SafeCleanScannerTests {
 
         await TestSuite.run("Scanner: unimplemented inspectors and command rules report unavailable") {
             try await M1.withEnv { env in
+                // Milestone 6: every pinned inspector id is implemented; an unpinned id whose inspector
+                // is not registered stands in for "unimplemented".
                 let rules = [
-                    M1.rule(id: "test.inspector", discovery: .inspector(.orphanedAppData)),
+                    M1.rule(id: "test.inspector", discovery: .inspector(.electronCaches)),
                     M1.rule(id: "test.command", tier: .yellow,
                             action: .command(CommandSpec(tool: "brew", arguments: ["cleanup", "--prune=all"], idempotentSafe: true)),
                             discovery: .command(CommandSpec(tool: "brew", arguments: ["cleanup", "--prune=all", "-n"], idempotentSafe: true))),
                 ]
                 let catalog = RuleCatalog(validating: rules, environment: env.environment)
                 try TestSuite.assertEqual(catalog.rules.count, 2, "\(catalog.disabled)")
-                let results = byRule(try await makeScanner(env, catalog: catalog).scan())
+                let inspectors = try M6.fixtureInspectors(env.fixture).filter { $0.id != .electronCaches }
+                let scanner = SafeCleanScanner(environment: env.environment, catalog: catalog, inspectors: inspectors,
+                                               hasFullDiskAccess: true, waivedSystemRoots: [env.fixture.root])
+                let results = byRule(await scanner.scan())
                 for id in ["test.inspector", "test.command"] {
                     try TestSuite.assertEqual(results[id]?.status, .unavailable("Available in a later milestone"), id)
                     try TestSuite.assertEqual(results[id]?.targets.count, 0, id)
@@ -434,8 +469,10 @@ struct SafeCleanScannerTests {
                     }
                     return out
                 }
+                // (Built first: the fixture-rooted M6 inspectors create their fixture folders.)
+                let scanner = try makeScanner(env)
                 let before = snapshot()
-                _ = try await makeScanner(env).scan()
+                _ = await scanner.scan()
                 try TestSuite.assertEqual(snapshot(), before)
                 let methods = Set(env.fileSystem.recordedCalls.map(\.0))
                 try TestSuite.assertFalse(methods.contains(.readFile), "\(methods)")

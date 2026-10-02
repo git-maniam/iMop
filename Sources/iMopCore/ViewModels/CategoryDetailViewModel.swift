@@ -1,16 +1,19 @@
 import Foundation
-import SwiftUI
 import Observation
 
-public enum SortOption: String, CaseIterable, Identifiable {
+/// Sort orders of the category list (spec §9.2).
+public enum SortOption: String, CaseIterable, Identifiable, Sendable {
     case sizeDescending = "Size (Largest)"
     case sizeAscending = "Size (Smallest)"
     case nameAscending = "Name (A-Z)"
-    case dateDescending = "Recently Modified"
+    case dateDescending = "Recently Used"
 
     public var id: String { rawValue }
 }
 
+/// Search and sort state of one category list. Pure presentation: it only filters and orders the
+/// `PlanItem`s AppState provides and never changes the plan or the selection.
+@MainActor
 @Observable
 public final class CategoryDetailViewModel {
     public var searchText: String = ""
@@ -18,29 +21,46 @@ public final class CategoryDetailViewModel {
 
     public init() {}
 
-    public func filteredAndSortedItems(from items: [JunkItem]) -> [JunkItem] {
-        var result = items
+    public func filteredAndSortedItems(from items: [PlanItem]) -> [PlanItem] {
+        Self.filterAndSort(items, query: searchText, sort: sortOption)
+    }
 
-        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-            let query = searchText.lowercased()
-            result = result.filter {
-                $0.name.lowercased().contains(query) ||
-                $0.path.path.lowercased().contains(query) ||
-                ($0.detailHint?.lowercased().contains(query) ?? false)
+    /// Matches the query (case- and diacritic-insensitive) against the item's name, full path, rule
+    /// title, owning app and notes; then sorts. Ties are broken by path so the order is stable.
+    public nonisolated static func filterAndSort(_ items: [PlanItem], query: String, sort: SortOption) -> [PlanItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        var result = items
+        if !trimmed.isEmpty {
+            result = result.filter { item in
+                let fields = [item.target.displayName, item.target.path, item.rule.title,
+                              item.target.owningBundleID ?? ""] + item.target.notes
+                return fields.contains { $0.range(of: trimmed, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
             }
         }
-
-        switch sortOption {
-        case .sizeDescending:
-            result.sort { $0.size > $1.size }
-        case .sizeAscending:
-            result.sort { $0.size < $1.size }
-        case .nameAscending:
-            result.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        case .dateDescending:
-            result.sort { $0.lastModified > $1.lastModified }
+        result.sort { lhs, rhs in
+            switch sort {
+            case .sizeDescending:
+                if lhs.target.reclaimableBytes != rhs.target.reclaimableBytes {
+                    return lhs.target.reclaimableBytes > rhs.target.reclaimableBytes
+                }
+            case .sizeAscending:
+                if lhs.target.reclaimableBytes != rhs.target.reclaimableBytes {
+                    return lhs.target.reclaimableBytes < rhs.target.reclaimableBytes
+                }
+            case .nameAscending:
+                let order = lhs.target.displayName.localizedCaseInsensitiveCompare(rhs.target.displayName)
+                if order != .orderedSame { return order == .orderedAscending }
+            case .dateDescending:
+                // Items with no known last use sort last.
+                switch (lhs.target.lastUsed, rhs.target.lastUsed) {
+                case let (l?, r?) where l != r: return l > r
+                case (.some, .none): return true
+                case (.none, .some): return false
+                default: break
+                }
+            }
+            return lhs.target.path < rhs.target.path
         }
-
         return result
     }
 }

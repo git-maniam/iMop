@@ -94,7 +94,7 @@ public struct JetBrainsCachesInspector: Inspector {
         let entries: [InspectorWalker.Entry]
         switch walker.list(caches, device: device) {
         case .absent: return InspectorOutput(candidates: [], status: .ok)
-        case .declined: return InspectorOutput(candidates: [], status: .unavailable("Access was declined"))
+        case .declined: return InspectorOutput(candidates: [], status: .unavailable(SafeCleanScanner.accessDeclinedMessage))
         case .entries(let list): entries = list
         }
 

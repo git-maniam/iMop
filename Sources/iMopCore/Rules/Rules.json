@@ -2219,7 +2219,8 @@
         "notOpenByAnyProcess",
         "stillOrphaned"
       ],
-      "action": "trash"
+      "action": "trash",
+      "requiresFullDiskAccess": true
     },
     {
       "id": "leftovers.launchAgents",
@@ -2413,7 +2414,7 @@
       "category": "developer",
       "tier": "advisory",
       "title": "Docker's virtual disk",
-      "explanation": "Docker Desktop keeps all images, containers and volumes inside one virtual disk file (Docker.raw). Deleting images does not make this file smaller on its own. iMop never touches this file: use Docker Desktop › Settings › Resources to change its size, or the Docker cleanup items above. If you use OrbStack or Colima instead, use their own settings or commands to reclaim space.",
+      "explanation": "Docker Desktop keeps all images, containers and volumes inside one virtual disk file (Docker.raw). Deleting images does not make this file smaller on its own. iMop never touches this file. To reclaim space without losing data, remove unused images, stopped containers and build cache from inside Docker (the Docker cleanup items above, or Docker Desktop's own views); docker system df shows what uses the space. Warning: lowering the disk size limit in Docker Desktop's settings, or using Troubleshoot › Clean / Purge data, deletes and recreates this file — all images, containers and volumes (including databases) are lost. If you use OrbStack or Colima instead, use their own settings or commands to reclaim space.",
       "whatYouLose": "Nothing: iMop only shows how big the file is and where to manage it.",
       "howItRegenerates": "Docker manages this file itself and grows it again as needed.",
       "discovery": {

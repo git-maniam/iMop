@@ -49,10 +49,20 @@ struct TestRunner {
         await YellowPolicyTests.runAll()
         await M5ReviewRegressionTests.runAll()
 
-        // v1.0 suites (replaced in Milestone 7).
-        await ScannerTests.runAll()
-        await AppRegistryTests.runAll()
-        await SafetyAndDeletionTests.runAll()
+        // Milestone 6 — OrphanDetector, LaunchAgents, Trash flows, Advisory rules, permission probes (spec §6.9, §8, §13 M6).
+        await OrphanDetectorTests.runAll()
+        await LaunchAgentTests.runAll()
+        await TrashFlowTests.runAll()
+        await AdvisoryTests.runAll()
+        await PermissionProbeTests.runAll()
+        await RetentionOverrideTests.runAll()
+
+        // Milestone 7 — the app state the SwiftUI app drives (spec §3.2, §9, §13 M7). The v1.0 suites
+        // (Scanner, AppRegistry, SafetyAndDeletion) were removed with the v1.0 deletion path; their
+        // safety intent is covered by the M1–M6 suites above.
+        await AppStateTests.runAll()
+        await AboutTextTests.runAll()
+        await M7ReviewRegressionTests.runAll()
 
         await TestSuite.run("Fixtures: no iMopTests-* directory created by this run is left in the temporary directory") {
             let leftovers = FixtureLeakCheck.fixtureRootNames().subtracting(fixturesBefore)
