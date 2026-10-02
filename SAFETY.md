@@ -389,7 +389,11 @@ may name: `xcode-select -p`, `hdiutil info -plist`, `/usr/sbin/pkgutil --pkgs`,
   `pkgutil`, `tmutil` and `launchctl` only from their exact SIP-protected paths.
 - Trust: every directory on the way (each ancestor up to `/`, each symlink hop) is owned by the user or
   root and **not group/world-writable**; every symlink is owned by the user or root; the file is a
-  regular executable owned by the user or root, not group/world-writable; its real path is inside a
+  regular executable owned by the user or root, not group/world-writable; no directory on the way and
+  not the file carries an extended ACL with an ALLOW entry that grants any write-type permission
+  (`write`/`add_file`, `append`/`add_subdirectory`, `delete`, `delete_child`, `writeattr`,
+  `writeextattr`, `writesecurity`, `chown`) to anyone — DENY entries such as the home folder's
+  `everyone deny delete` are fine, an unreadable ACL is refused; its real path is inside a
   trusted root (`/usr/bin`, `/opt/homebrew`, `/usr/local`, `~/.cargo/bin`, `~/go/bin`, `~/.bun/bin`,
   `~/.local/bin`); `#!` interpreters pass the same checks (`#!/usr/bin/env NAME` with exactly one bare
   name, resolved like `env` would). The first match decides: an untrusted match is refused, not skipped.
@@ -413,20 +417,38 @@ may name: `xcode-select -p`, `hdiutil info -plist`, `/usr/sbin/pkgutil --pkgs`,
   4. it is **not world-writable** (`S_IWOTH` is never accepted; the sticky bit changes nothing).
 
   Files must still be regular, executable, owned by the user or root and not group/world-writable;
-  symlinks must still be owned by the user or root. Everything else — trusted roots, the allow-listed
+  symlinks must still be owned by the user or root. The relaxation covers the group mode bits only, never
+  an extended ACL (see above). Everything else — trusted roots, the allow-listed
   (tool, arguments) pairs, `{ITEM}` validators, purpose enforcement, the device/inode re-check right
   before launch, the sanitized environment — is unchanged. OFF behaves exactly as before this setting
-  existed. The residual risk when ON: every account in the `admin` group can replace these tools, and
-  iMop would then run what they put there as the user. That is why turning it on first shows those
-  accounts (`AdminGroupMembers.current()`: explicit members of `admin` plus accounts whose primary group
-  is `admin`, without the user and root; "could not be determined" is shown with a stronger warning) and
-  needs an explicit "Trust Homebrew Tools" click (Cancel is the default action). Turning it off needs no
-  confirmation. Every change is recorded in the audit log (`settings.trustHomebrewTools`, enabled /
-  disabled, with the disclosed account list).
+  existed. The residual risk when ON: every account in the `admin` group can add, remove or rename
+  entries in these folders at any time — also between iMop's check and the launch, and for anything a
+  vendor tool (or `#!/usr/bin/env`) looks up on PATH at run time — and iMop would then run what they put
+  there as the user. (`resolveExecutable` itself still refuses a file owned by another account, and the
+  launch is refused unless the file is the same inode that passed every check.) With the setting OFF
+  nobody but the user or root can change anything on the way. That is why turning it on first shows
+  those accounts and needs an explicit "Trust Homebrew Tools" click (Cancel is the default action).
+  `AdminGroupMembers.current()` lists explicit members of `admin` (`getgrnam` `GroupMembership`),
+  members listed by UUID (`GroupMembers`, mapped to account names through Open Directory) and accounts
+  whose primary group is `admin`, without the user and root. The list is shown only when it is
+  complete: an unreadable `admin` record, a different group id, any `NestedGroups` entry (e.g. a
+  directory-bound "Allow administration by" group or an MDM admin group, whose members cannot be listed
+  reliably) or a member UUID that is not a known user account give "could not be determined", shown
+  with a stronger warning; an empty list is worded "iMop found no other account …", never "no one
+  else can". The lookup runs off the main thread (a progress line is shown meanwhile).
+  Turning it off needs no confirmation and is immediate, also for a scan or cleanup that is already
+  running: every runner handed out while the setting was ON shares a one-way
+  `CommandTrustRevocation` switch that AppState revokes, so the next command of that run is resolved
+  under the strict rule again (like exclusions added during a run). Turning it on again starts a new
+  switch; a run is never widened while it runs. Every change is recorded in the audit log
+  (`settings.trustHomebrewTools`, enabled / disabled, with the account list; entries keep the order of
+  the changes).
 - Honest reasons: when a tool exists and would pass every check but is refused only because a Homebrew
-  folder is admin-writable and the setting is OFF, `CommandRunner.unavailableReason(for:)` says so ("npm
-  is in /opt/homebrew/bin, a folder other accounts can change. Turn on “Trust Homebrew tools” in Settings
-  to allow it."). Inspectors, the cocoapods exclusive pair and the Executor report that reason instead
+  folder is admin-writable and the setting is OFF, `CommandRunner.unavailableReason(for:)` says so and
+  names the first folder that needed the relaxation: "npm is in /opt/homebrew/bin, a folder other
+  accounts can change. Turn on “Trust Homebrew tools” in Settings to allow it." when it is the tool's own
+  folder, or "<tool> uses /opt/homebrew/bin, …" when it is a `#!` interpreter's folder, a symlink target
+  or a program `env` finds on PATH. Inspectors, the cocoapods exclusive pair and the Executor report that reason instead
   of "not installed in a trusted location"; it appears in Permissions › "Unavailable this session" and in
   each category's "Not offered in this scan".
 - Environment: only `PATH` (trusted directories that pass the checks now, then `/usr/bin`, `/bin`),
@@ -479,8 +501,9 @@ domain; unreadable data falls back to the defaults, `alwaysQuarantine = true`):
   trusted, so it is opt-in: default OFF; a missing or unreadable value decodes to OFF (an unreadable one
   is also reported, which pauses cleaning until Settings are checked); turning it on needs the
   disclosure + confirmation above and is audited. It takes part in the "plan built under other
-  settings" check, and the environment's command runner always follows it
-  (`SafeCleanEnvironment.with(scanSettings:)` applies `CommandTrustPolicy(settings:)`).
+  settings" check, and the environment's command runner always follows it (`SafeCleanEnvironment`
+  applies `CommandTrustPolicy(settings:)` in `init` and whenever `scanSettings` is assigned, including
+  through `with(scanSettings:)`).
 - `lastSeenVolumes`: `nil` (never recorded) or a remembered drive that is not connected pauses orphan
   detection entirely; volumes are identified by UUID.
 - Safety-relevant changes apply to the next scan/plan; a plan built under other settings is refused at
@@ -571,7 +594,12 @@ Additional checks for this build:
       admin account on the VM to see it listed; the current user and root are never listed), Cancel is the
       default and leaves it OFF; confirm → an outdated-plan notice until the next scan, then the Homebrew
       rules are offered. `chmod o+w /opt/homebrew/bin` (VM only) → refused again even with the setting
-      ON; restore with `chmod o-w`. The audit log has one `settings.trustHomebrewTools` entry per change.
+      ON; restore with `chmod o-w`. `chmod +a "everyone allow add_file" /opt/homebrew/bin` (VM only) →
+      refused ON and OFF; restore with `chmod -a "everyone allow add_file" /opt/homebrew/bin`. On a VM
+      whose `admin` group has a nested group (`dseditgroup -o edit -a <group> -t group admin`) the
+      dialog says the accounts could not be determined. Turn the setting OFF during a cleanup that runs
+      a Homebrew command later in the list → that command is refused with the trust reason. The audit
+      log has one `settings.trustHomebrewTools` entry per change, in order.
 
 ## Remaining Milestone 8 work
 
@@ -593,9 +621,9 @@ conservative behaviour was chosen.
 
 <!-- BEGIN GENERATED SAFETY-DECISION INDEX -->
 
-537 SAFETY-DECISION comments in 50 files.
+542 SAFETY-DECISION comments in 50 files.
 
-### `Sources/iMopCore/Environment/Environment.swift` (8)
+### `Sources/iMopCore/Environment/Environment.swift` (9)
 
 - a locator that cannot answer vendor-domain queries answers "could not evaluate", so nothing is classified as orphaned through it.
 - an inspector that cannot read volume identities reports every volume WITHOUT a UUID, which the OrphanDetector treats as "cannot tell which drive this is" (nothing is orphaned while such a volume is mounted).
@@ -605,6 +633,7 @@ conservative behaviour was chosen.
 - the default verifier answers `nil` ("cannot evaluate") for every path, so an environment built without an explicit verifier makes `appleSigned` fail closed.
 - the defaults configure NO project roots and an unavailable Spotlight, so an environment built without them discovers nothing through those features.
 - the runner always follows the settings' command trust policy, so the opt-in Homebrew relaxation is ON only while the settings say so (default OFF).
+- assigning new settings ALWAYS re-applies their command trust policy to `commands`, so the Homebrew relaxation can never outlive (or precede) the setting.
 
 ### `Sources/iMopCore/Environment/LiveEnvironment.swift` (22)
 
@@ -1107,7 +1136,7 @@ conservative behaviour was chosen.
 - a target path that cannot be interpreted cannot be shown to be outside every exclusion.
 - an exclusion that cannot be interpreted might cover this item.
 
-### `Sources/iMopCore/Execution/CommandRunner.swift` (22)
+### `Sources/iMopCore/Execution/CommandRunner.swift` (23)
 
 - the only system tools ever taken from /usr/bin.
 - system tools that are resolved ONLY from this exact, SIP-protected path (never from any search directory): `pkgutil --pkgs` (read-only, OrphanDetector condition 4), `tmutil listlocalsnapshots /` (read-only, Time Machine advisory) and `launchctl bootout …` (the Executor's `bootoutAndTrash` only).
@@ -1115,12 +1144,13 @@ conservative behaviour was chosen.
 - no caller may run a command longer than the longest spec timeout (30 min, `simctl runtime delete`); a non-positive or non-finite timeout means the 10-minute default.
 - a symlinked executable is accepted only when its real path is ALSO inside one of these roots (e.g. Homebrew's `bin/brew` → `/opt/homebrew/Library/...`).
 - only the exact path; its real path must be that same file.
-- resolve the path component by component, checking EVERY directory passed through (all ancestors up to "/", each symlink hop's directory) and every symlink, so nobody but the user or root can swap anything between the check and the launch.
+- resolve the path component by component, checking EVERY directory passed through (all ancestors up to "/", each symlink hop's directory) and every symlink, so — with "Trust Homebrew tools" OFF — nobody but the user or root can swap anything between the check and the launch (with it ON, `admin` members can change entries in the trusted Homebrew folders: the disclosed residual risk).
+- the mode-bit checks alone miss an ACL such as `everyone allow add_file,delete_child` on a 0755 folder, which lets any account swap the tool; such an ALLOW entry is refused whoever it names, DENY entries are fine, an unreadable ACL counts as writable.
 - a `#!` script runs its interpreter, so the interpreter must pass the same checks (inside a trusted root or SIP-protected /bin, /usr/bin).
 - a file whose first bytes cannot be read cannot be checked → refused.
 - `#!/usr/bin/env NAME` — exactly one bare program name (no `-S`, no options, no assignments), resolved exactly like `env` will: the first directory of the sanitized PATH that has an entry of that name decides, and that entry must pass every check.
 - the folder's owner must be the current user — not root, not anyone else (opt-in "Trust Homebrew tools" relaxation; files and symlinks are never relaxed).
-- the child's PATH lists only the trusted search directories that pass the directory checks NOW (every directory on the way owned by the user or root, none group/world-writable — e.g. a 0775 `/opt/homebrew/bin` is left out unless "Trust Homebrew tools" is ON and it passes `isTrustedHomebrewDirectory`), followed by the SIP-protected `/usr/bin` and `/bin`.
+- the child's PATH lists only the trusted search directories that pass the directory checks NOW (every directory on the way owned by the user or root, none group/world-writable — e.g. a 0775 `/opt/homebrew/bin` is left out unless "Trust Homebrew tools" is ON and it passes `isTrustedHomebrewDirectory`), followed by the SIP-protected `/usr/bin` and `/bin`. With the setting OFF no program can be picked from a folder `resolveExecutable` would refuse; with it ON, another `admin` member's entries in a trusted Homebrew folder on PATH could be (the disclosed residual risk).
 - spec §5.3 lists only PATH, HOME, USER and LANG.
 - the child sees only PATH (trusted directories), HOME, USER, LANG and the fixed `networkOptOutVariables`.
 - the purpose-less form is read-only.
@@ -1132,10 +1162,12 @@ conservative behaviour was chosen.
 - signals go to the whole process group of the child (a grandchild that ignores SIGTERM is still killed), even after the direct child has exited — the group id cannot be reused while any member is alive, and nothing is sent once the result is delivered.
 - a stopped command's result is delivered only after the SIGKILL went to its process group, or once no member of the group is left.
 
-### `Sources/iMopCore/Execution/CommandTrustPolicy.swift` (3)
+### `Sources/iMopCore/Execution/CommandTrustPolicy.swift` (5)
 
 - OFF unless the user turned it on (after seeing who else could change the tools).
 - the exact Homebrew locations the relaxation may ever apply to — nothing else.
+- there is deliberately no way back: a revoked switch stays revoked (turning the setting ON again starts a NEW switch that only runners built afterwards use).
+- `getgrnam` shows only the short-name `GroupMembership`; the account list is returned only when it is COMPLETE (readable record, same group id, no nested groups, every member UUID a known user account), else "could not be determined".
 - when the user's own name is unknown nothing else is removed (listing too many accounts is the safe side of a disclosure).
 
 ### `Sources/iMopCore/Execution/Executor.swift` (18)
@@ -1214,11 +1246,12 @@ conservative behaviour was chosen.
 - only a real directory is probed; a symlink (which could point anywhere) or a missing folder says nothing about the permission.
 - any listing failure (not only EPERM) counts as "denied", so rules that need Full Disk Access stay locked rather than failing half-way.
 
-### `Sources/iMopCore/ViewModels/AppState.swift` (19)
+### `Sources/iMopCore/ViewModels/AppState.swift` (20)
 
 - there is deliberately NO mutation-policy knob.
 - cleaning is refused until the user has checked Settings and called `acknowledgeSettingsReview()`, because a lost exclusion would silently widen what iMop may touch.
 - an exclusion added while a cleanup runs applies to that run too (the Executor's SafetyGate reads `runExclusions` live at every item).
+- turning "Trust Homebrew tools" OFF withdraws it at once, also from a scan or cleanup that is already running (its runner shares a one-way switch); turning it ON starts a new switch, so a run started while it was OFF never gains the relaxation.
 - always the compile-time policy (see AppStateFixtureOptions).
 - rules whose access macOS refused earlier in this session are not scanned again (no repeated prompting); they are reported as unavailable.
 - only a positively confirmed grant unlocks the rules that need Full Disk Access (`.unknown` keeps them locked).

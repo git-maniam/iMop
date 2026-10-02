@@ -283,14 +283,22 @@ public struct SafeCleanEnvironment: Sendable {
     public let runningApplications: any RunningApplicationsProviding
     public let applications: any ApplicationLocating
     public let volumes: any VolumeInspecting
-    /// Always configured with the trust policy of `scanSettings` (see `with(scanSettings:)`).
+    /// Always configured with the trust policy of `scanSettings` (and `commandTrustRevocation`): set
+    /// in `init` and re-applied whenever either changes.
     public private(set) var commands: any CommandRunning
     public let codeSignatures: any CodeSignatureVerifying
     public let clock: any Clock
     public let effectiveUserID: UInt32
     public let userID: UInt32
     /// User settings (project roots, archives to keep, overrides, exclusions …).
-    public var scanSettings: ScanSettings
+    /// SAFETY-DECISION (review): assigning new settings ALWAYS re-applies their command trust policy
+    /// to `commands`, so the Homebrew relaxation can never outlive (or precede) the setting.
+    public var scanSettings: ScanSettings {
+        didSet { applyTrustPolicy() }
+    }
+    /// Shared switch that withdraws an ON "Trust Homebrew tools" from this environment's runner while
+    /// it is in use (AppState revokes it when the user turns the setting OFF). `nil`: no live switch.
+    public private(set) var commandTrustRevocation: CommandTrustRevocation?
     /// Spotlight file search; unavailable (always `nil`) unless injected.
     public var spotlight: any SpotlightSearching
     /// Fixed system folders (the real ones unless a test injects fixture folders).
@@ -333,12 +341,29 @@ public struct SafeCleanEnvironment: Sendable {
         self.spotlight = spotlight
     }
 
-    /// A copy of this environment with different settings.
+    /// A copy of this environment with different settings (`scanSettings`' `didSet` re-applies the
+    /// command trust policy).
     public func with(scanSettings: ScanSettings) -> SafeCleanEnvironment {
         var copy = self
         copy.scanSettings = scanSettings
-        copy.commands = commands.applying(CommandTrustPolicy(settings: scanSettings))
         return copy
+    }
+
+    /// A copy of this environment whose runner also obeys `revocation` (see `CommandTrustRevocation`).
+    public func with(commandTrustRevocation revocation: CommandTrustRevocation?) -> SafeCleanEnvironment {
+        var copy = self
+        copy.commandTrustRevocation = revocation
+        copy.applyTrustPolicy()
+        return copy
+    }
+
+    /// The command trust policy the settings (and the live switch) ask for.
+    public var commandTrustPolicy: CommandTrustPolicy {
+        CommandTrustPolicy(settings: scanSettings, revocation: commandTrustRevocation)
+    }
+
+    private mutating func applyTrustPolicy() {
+        commands = commands.applying(commandTrustPolicy)
     }
 
     /// A copy of this environment with different system folders (tests: fixture folders).

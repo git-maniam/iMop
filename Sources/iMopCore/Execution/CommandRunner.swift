@@ -6,8 +6,9 @@ import Foundation
 /// - Executables are resolved only from a fixed list of trusted directories and verified: every
 ///   directory on the way to the file (each ancestor, each symlink hop) is owned by the user or root
 ///   and not group/world-writable; every symlink is owned by the user or root; the final file is a
-///   regular, executable file owned by the user or root and not group/world-writable; its real path
-///   is inside a trusted root; and when it is a `#!` script its interpreter passes the same checks.
+///   regular, executable file owned by the user or root and not group/world-writable; no directory
+///   or file on the way carries an extended ACL that lets anyone write to it; its real path is
+///   inside a trusted root; and when it is a `#!` script its interpreter passes the same checks.
 ///   The only exception is opt-in (Settings → "Trust Homebrew tools", OFF by default): see
 ///   `isTrustedHomebrewDirectory`.
 /// - `Process` is started with the ABSOLUTE, fully resolved executable path and an ARGUMENT ARRAY.
@@ -89,6 +90,9 @@ public struct CommandRunner: CommandRunning {
     let homebrewPrefixes: [String]
     /// The `admin` group's id; `nil` (lookup failed) disables the relaxation.
     let adminGroupID: gid_t?
+    /// Set only on the throw-away copy `unavailableReason(for:)` uses: collects the directories that
+    /// were accepted ONLY through the Homebrew relaxation, so the message can name the right one.
+    private var relaxedDirectories: RelaxedDirectoryRecorder?
 
     /// Production runner for the user whose home is `homeDirectory`.
     public init(homeDirectory: URL, policy: CommandTrustPolicy = .strict) {
@@ -195,14 +199,25 @@ public struct CommandRunner: CommandRunning {
     /// Why `tool` is unavailable when the user can change that: it exists and would pass every check,
     /// but only with "Trust Homebrew tools" ON (it is in, or depends on, a Homebrew folder the `admin`
     /// group may write to). `nil` in every other case (resolves, missing, or refused for another reason).
+    ///
+    /// The message names the first folder that needed the relaxation: "<tool> is in <folder>" when that
+    /// is the tool's own folder (or contains it), "<tool> uses <folder>" when it is somewhere else (a
+    /// `#!` interpreter's folder, a symlink target, a program `env` finds on PATH).
     public func unavailableReason(for tool: String) -> String? {
-        guard !policy.trustsHomebrewAdminWritableDirectories, adminGroupID != nil, !homebrewPrefixes.isEmpty,
+        guard !policy.relaxesHomebrewDirectories, adminGroupID != nil, !homebrewPrefixes.isEmpty,
               verifiedResolution(tool) == nil else { return nil }
         var relaxed = self
-        relaxed.policy.trustsHomebrewAdminWritableDirectories = true
-        guard let found = relaxed.verifiedResolution(tool) else { return nil }
-        return CommandTrustPolicy.homebrewTrustRequiredMessage(
-            tool: tool, folder: (found.candidate as NSString).deletingLastPathComponent)
+        relaxed.policy = CommandTrustPolicy(trustsHomebrewAdminWritableDirectories: true)
+        let recorder = RelaxedDirectoryRecorder()
+        relaxed.relaxedDirectories = recorder
+        guard let found = relaxed.verifiedResolution(tool), let needed = recorder.first else { return nil }
+        let ownFolder = (found.candidate as NSString).deletingLastPathComponent
+        RealHomeGuard.check(ownFolder)
+        let ownFolders = [ownFolder] + (Self.realpath(ownFolder).map { [$0] } ?? [])
+        if ownFolders.contains(where: { Self.isInside($0, root: needed) }) {
+            return CommandTrustPolicy.homebrewTrustRequiredMessage(tool: tool, folder: ownFolder)
+        }
+        return CommandTrustPolicy.homebrewTrustRequiredMessage(tool: tool, uses: needed)
     }
 
     func verifiedResolution(_ tool: String) -> VerifiedExecutable? {
@@ -250,7 +265,11 @@ public struct CommandRunner: CommandRunning {
         guard depth <= Self.maximumInterpreterDepth else { return nil }
         // SAFETY-DECISION (review M4): resolve the path component by component, checking EVERY
         // directory passed through (all ancestors up to "/", each symlink hop's directory) and every
-        // symlink, so nobody but the user or root can swap anything between the check and the launch.
+        // symlink, so — with "Trust Homebrew tools" OFF — nobody but the user or root can swap
+        // anything between the check and the launch. With it ON, members of the `admin` group can add,
+        // remove or rename entries in the trusted Homebrew folders at any time (the residual risk the
+        // Settings confirmation discloses); the launch is still refused unless the file is the same
+        // inode that passed every check.
         guard let resolved = secureResolve(path) else { return nil }
         RealHomeGuard.check(resolved.path)
         guard isInside(resolved.path, roots: roots) else { return nil }
@@ -260,6 +279,7 @@ public struct CommandRunner: CommandRunning {
         guard (file.st_mode & S_IFMT) == S_IFREG else { return nil }
         guard file.st_uid == userID || file.st_uid == 0 else { return nil }
         guard (file.st_mode & (S_IWGRP | S_IWOTH)) == 0 else { return nil }
+        guard !Self.hasWritableExtendedACL(resolved.path) else { return nil }
         guard (file.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0, Darwin.access(resolved.path, X_OK) == 0 else { return nil }
 
         // SAFETY-DECISION (review M4): a `#!` script runs its interpreter, so the interpreter must
@@ -330,8 +350,58 @@ public struct CommandRunner: CommandRunning {
     private func isSafeDirectory(_ info: Darwin.stat, path: String) -> Bool {
         guard (info.st_mode & S_IFMT) == S_IFDIR else { return false }
         guard info.st_uid == userID || info.st_uid == 0 else { return false }
+        // The Homebrew relaxation covers the group mode bits only, never an ACL.
+        guard !Self.hasWritableExtendedACL(path) else { return false }
         if (info.st_mode & (S_IWGRP | S_IWOTH)) == 0 { return true }
-        return isTrustedHomebrewDirectory(info, path: path)
+        guard isTrustedHomebrewDirectory(info, path: path) else { return false }
+        relaxedDirectories?.record(path)
+        return true
+    }
+
+    /// Every permission an extended ACL entry could grant that lets its principal change a directory's
+    /// entries or a file's contents, attributes, owner or permissions.
+    private static let modifyingACLPermissions: [acl_perm_t] = [
+        ACL_WRITE_DATA, ACL_ADD_FILE, ACL_APPEND_DATA, ACL_ADD_SUBDIRECTORY, ACL_DELETE, ACL_DELETE_CHILD,
+        ACL_WRITE_ATTRIBUTES, ACL_WRITE_EXTATTRIBUTES, ACL_WRITE_SECURITY, ACL_CHANGE_OWNER,
+    ]
+
+    /// `true` when `path` (never followed through a final symlink) has an extended ACL with an ALLOW
+    /// entry granting any of `modifyingACLPermissions`, or when its ACL cannot be read.
+    ///
+    /// SAFETY-DECISION (review): the mode-bit checks alone miss an ACL such as
+    /// `everyone allow add_file,delete_child` on a 0755 folder, which lets any account swap the tool.
+    /// Such an ALLOW entry is refused whoever it names (an entry for the owner adds nothing the mode
+    /// bits do not already give, so refusing it too costs nothing in practice); DENY entries (e.g. the
+    /// home folder's `everyone deny delete`) only take rights away and are fine. An ACL that cannot be
+    /// read counts as writable (fail closed).
+    static func hasWritableExtendedACL(_ path: String) -> Bool {
+        errno = 0
+        guard let acl = acl_get_link_np(path, ACL_TYPE_EXTENDED) else {
+            // No extended ACL at all.
+            return errno != ENOENT
+        }
+        defer { acl_free(UnsafeMutableRawPointer(acl)) }
+        var entry: acl_entry_t?
+        var which = ACL_FIRST_ENTRY.rawValue
+        while true {
+            let status = acl_get_entry(acl, which, &entry)
+            which = ACL_NEXT_ENTRY.rawValue
+            guard status == 0, let current = entry else {
+                // End of the list (EINVAL); anything else is unreadable.
+                return status != -1 || errno != EINVAL
+            }
+            var tag = ACL_UNDEFINED_TAG
+            guard acl_get_tag_type(current, &tag) == 0 else { return true }
+            if tag == ACL_EXTENDED_DENY { continue }
+            // ALLOW or anything unknown.
+            guard tag == ACL_EXTENDED_ALLOW else { return true }
+            var permissions: acl_permset_t?
+            guard acl_get_permset(current, &permissions) == 0, let permissions else { return true }
+            for permission in modifyingACLPermissions {
+                let granted = acl_get_perm_np(permissions, permission)
+                if granted != 0 { return true }
+            }
+        }
     }
 
     /// The opt-in relaxation (Settings → "Trust Homebrew tools", OFF by default). A group-writable
@@ -349,7 +419,9 @@ public struct CommandRunner: CommandRunning {
     /// admin-writable folder is not a standard Homebrew folder and stays refused. Files and symlinks
     /// are never relaxed (a file must still be owned by the user or root and not group/world-writable).
     private func isTrustedHomebrewDirectory(_ info: Darwin.stat, path: String) -> Bool {
-        guard policy.trustsHomebrewAdminWritableDirectories, let adminGroupID else { return false }
+        // `relaxesHomebrewDirectories` is false once the setting was turned OFF, even for a runner
+        // handed to a scan or cleanup that is still running (`CommandTrustRevocation`).
+        guard policy.relaxesHomebrewDirectories, let adminGroupID else { return false }
         guard (info.st_mode & S_IFMT) == S_IFDIR else { return false }
         guard (info.st_mode & S_IWOTH) == 0 else { return false }
         guard info.st_uid == userID, info.st_gid == adminGroupID else { return false }
@@ -449,8 +521,12 @@ public struct CommandRunner: CommandRunning {
     /// pass the directory checks NOW (every directory on the way owned by the user or root, none
     /// group/world-writable — e.g. a 0775 `/opt/homebrew/bin` is left out unless "Trust Homebrew
     /// tools" is ON and it passes `isTrustedHomebrewDirectory`), followed by the
-    /// SIP-protected `/usr/bin` and `/bin`. A directory whose contents `resolveExecutable` would refuse
-    /// is never on PATH, so neither `env` nor a vendor tool can pick a program from it.
+    /// SIP-protected `/usr/bin` and `/bin`. With the setting OFF, a directory whose contents
+    /// `resolveExecutable` would refuse is never on PATH, so neither `env` nor a vendor tool can pick a
+    /// program from it. With it ON, a trusted Homebrew folder on PATH can also gain entries made by
+    /// another `admin` member (refused by `resolveExecutable`, which checks each file's owner, but a
+    /// vendor tool or `env` looking a name up on PATH at run time could pick them): the residual
+    /// risk the Settings confirmation discloses.
     @_spi(FixtureTesting)
     public func sanitizedPathDirectories() -> [String] {
         var result: [String] = []
@@ -914,5 +990,22 @@ private final class CommandSession: @unchecked Sendable {
         killItem = nil
         lock.unlock()
         completion(result)
+    }
+}
+
+/// Collects, in order and without duplicates, the directories accepted only through the Homebrew
+/// relaxation during one `unavailableReason(for:)` check (a throw-away, never shared runner copy).
+private final class RelaxedDirectoryRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var paths: [String] = []
+
+    func record(_ path: String) {
+        lock.lock(); defer { lock.unlock() }
+        if !paths.contains(path) { paths.append(path) }
+    }
+
+    var first: String? {
+        lock.lock(); defer { lock.unlock() }
+        return paths.first
     }
 }

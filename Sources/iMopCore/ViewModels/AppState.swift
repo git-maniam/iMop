@@ -331,8 +331,17 @@ public final class AppState {
     public var settings: ScanSettings {
         get { storedSettings }
         set {
+            let wasTrustingHomebrew = storedSettings.trustHomebrewAdminWritableDirectories
             storedSettings = newValue
             settingsStore.save(newValue)
+            // SAFETY-DECISION (review): turning "Trust Homebrew tools" OFF withdraws it at once, also
+            // from a scan or cleanup that is already running (its runner shares this switch and
+            // refuses the Homebrew folders from its next command on). Turning it ON starts a new
+            // switch; a run started while it was OFF never gains the relaxation.
+            if wasTrustingHomebrew != newValue.trustHomebrewAdminWritableDirectories {
+                homebrewTrustRevocation.revoke()
+                homebrewTrustRevocation = CommandTrustRevocation()
+            }
             // SAFETY-DECISION (review M7): an exclusion added while a cleanup runs applies to that run
             // too (the Executor's SafetyGate reads `runExclusions` live at every item).
             if let runExclusions {
@@ -368,6 +377,8 @@ public final class AppState {
     @ObservationIgnored private var itemIndex: [UUID: PlanItem] = [:]
     /// Exclusions read live by the running Executor's SafetyGate.
     @ObservationIgnored private var runExclusions: LiveExclusions?
+    /// Live switch shared by every runner handed out while "Trust Homebrew tools" has its current value.
+    @ObservationIgnored private var homebrewTrustRevocation = CommandTrustRevocation()
     /// Rules whose discovery was refused by macOS ("Access was declined") in this session.
     @ObservationIgnored private var sessionDeclinedRuleIDs: Set<String> = []
     @ObservationIgnored private var itemsByCategory: [RuleCategory: [PlanItem]] = [:]
@@ -425,7 +436,9 @@ public final class AppState {
     }
 
     /// The environment the next scan / plan / execution uses (current settings).
-    private var currentEnvironment: SafeCleanEnvironment { baseEnvironment.with(scanSettings: storedSettings) }
+    private var currentEnvironment: SafeCleanEnvironment {
+        baseEnvironment.with(scanSettings: storedSettings).with(commandTrustRevocation: homebrewTrustRevocation)
+    }
 
     // MARK: - Scanning
 
@@ -1261,28 +1274,60 @@ public final class AppState {
         settings = updated
     }
 
-    /// Settings → "Trust Homebrew tools" (OFF by default). The UI shows `homebrewTrustDisclosure()`
+    /// Settings → "Trust Homebrew tools" (OFF by default). The UI shows `loadHomebrewTrustDisclosure()`
     /// and asks for confirmation before turning it ON; turning it OFF needs no confirmation.
     /// `disclosedAccounts` is what the confirmation showed (`nil` = could not be determined); it is
-    /// recorded in the audit log with the change. Applies from the next scan: a plan built with the
-    /// other value is outdated (`planIsOutdated`) and refused by `confirmAndClean`.
+    /// recorded in the audit log with the change. A new plan needs a new scan: a plan built with the
+    /// other value is outdated (`planIsOutdated`) and refused by `confirmAndClean`. Turning it OFF also
+    /// applies at once to a scan or cleanup that is already running (see `settings`).
     public func setTrustHomebrewTools(_ enabled: Bool, disclosedAccounts: [String]?) {
         guard storedSettings.trustHomebrewAdminWritableDirectories != enabled else { return }
         var updated = storedSettings
         updated.trustHomebrewAdminWritableDirectories = enabled
         settings = updated
+        let event = Self.trustHomebrewEvent(enabled: enabled, accounts: disclosedAccounts, at: baseEnvironment.clock.now)
+        recordTrustHomebrewAudit { event }
+    }
+
+    /// Settings → turning "Trust Homebrew tools" OFF: applied at once (no confirmation); the admin
+    /// accounts for the audit entry are looked up off the main thread afterwards.
+    public func turnOffTrustHomebrewTools() {
+        guard storedSettings.trustHomebrewAdminWritableDirectories else { return }
+        var updated = storedSettings
+        updated.trustHomebrewAdminWritableDirectories = false
+        settings = updated
+        let now = baseEnvironment.clock.now
+        recordTrustHomebrewAudit { [weak self] in
+            let accounts = await self?.loadHomebrewTrustDisclosure() ?? nil
+            return Self.trustHomebrewEvent(enabled: false, accounts: accounts, at: now)
+        }
+    }
+
+    /// The last "Trust Homebrew tools" audit write; each one waits for the previous, so the log keeps
+    /// the order of the changes even when an entry's account list is looked up in the background.
+    @ObservationIgnored private var trustHomebrewAuditTail: Task<Void, Never>?
+
+    private func recordTrustHomebrewAudit(_ makeEvent: @escaping @MainActor () async -> AuditEvent) {
+        let previous = trustHomebrewAuditTail
+        let audit = self.auditLog
+        let task = Task { @MainActor in
+            await previous?.value
+            await audit.record(await makeEvent())
+        }
+        trustHomebrewAuditTail = task
+        track { await task.value }
+    }
+
+    private static func trustHomebrewEvent(enabled: Bool, accounts disclosed: [String]?, at time: Date) -> AuditEvent {
         let accounts: String
-        if let disclosedAccounts {
-            accounts = disclosedAccounts.isEmpty ? "none besides you and root" : disclosedAccounts.joined(separator: ", ")
+        if let disclosed {
+            accounts = disclosed.isEmpty ? "none found besides you and root" : disclosed.joined(separator: ", ")
         } else {
             accounts = "could not be determined"
         }
-        let event = AuditEvent(timestamp: baseEnvironment.clock.now, action: Self.trustHomebrewAuditAction,
-                               verdict: enabled ? "enabled" : "disabled",
-                               detail: "Trust Homebrew tools turned \(enabled ? "on" : "off"). "
-                                   + "Other accounts in the admin group: \(accounts).")
-        let audit = self.auditLog
-        track { await audit.record(event) }
+        return AuditEvent(timestamp: time, action: trustHomebrewAuditAction, verdict: enabled ? "enabled" : "disabled",
+                          detail: "Trust Homebrew tools turned \(enabled ? "on" : "off"). "
+                              + "Other accounts in the admin group: \(accounts).")
     }
 
     /// Audit action of a "Trust Homebrew tools" change.
@@ -1290,8 +1335,14 @@ public final class AppState {
 
     /// Accounts other than the user (and root) that could change Homebrew tools if "Trust Homebrew
     /// tools" is turned on (members of the `admin` group); `nil` when this cannot be determined.
-    public nonisolated func homebrewTrustDisclosure() -> [String]? {
-        AdminGroupMembers.current()
+    /// Test-only: the command trust policy the environment handed to the next scan / cleanup carries.
+    @_spi(FixtureTesting)
+    public var currentCommandTrustPolicy: CommandTrustPolicy { currentEnvironment.commandTrustPolicy }
+
+    /// Reads the account and directory databases on a background thread (they can be slow on a
+    /// directory-bound Mac), never on the main actor.
+    public nonisolated func loadHomebrewTrustDisclosure() async -> [String]? {
+        await Task.detached(priority: .userInitiated) { AdminGroupMembers.current() }.value
     }
 
     /// Where Homebrew lives on this Mac (for the Settings text).

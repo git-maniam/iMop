@@ -16,6 +16,8 @@ struct SettingsView: View {
     @LocalState private var confirmTrustHomebrew = false
     /// What the "Trust Homebrew tools" confirmation shows: the other admin accounts (`nil` = unknown).
     @LocalState private var homebrewDisclosure: [String]? = nil
+    /// The admin accounts are being looked up (off the main thread) before the confirmation opens.
+    @LocalState private var loadingHomebrewDisclosure = false
 
     init() {}
 
@@ -169,10 +171,17 @@ struct SettingsView: View {
                     // SAFETY-DECISION: turning the relaxation ON asks first (showing who else could
                     // change the tools); turning it OFF is immediate.
                     if newValue {
-                        homebrewDisclosure = appState.homebrewTrustDisclosure()
-                        confirmTrustHomebrew = true
+                        guard !loadingHomebrewDisclosure else { return }
+                        loadingHomebrewDisclosure = true
+                        // The account lookup can be slow (directory-bound Macs): never on the main actor.
+                        Task { @MainActor in
+                            let disclosure = await appState.loadHomebrewTrustDisclosure()
+                            homebrewDisclosure = disclosure
+                            loadingHomebrewDisclosure = false
+                            confirmTrustHomebrew = true
+                        }
                     } else {
-                        appState.setTrustHomebrewTools(false, disclosedAccounts: appState.homebrewTrustDisclosure())
+                        appState.turnOffTrustHomebrewTools()
                     }
                 }
             )) {
@@ -185,6 +194,15 @@ struct SettingsView: View {
                 }
             }
             .accessibilityLabel("Trust Homebrew tools in \(appState.homebrewLocation)")
+            .disabled(loadingHomebrewDisclosure)
+            if loadingHomebrewDisclosure {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Checking which accounts can change Homebrew tools…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         } header: {
             Text("Command-line tools")
         }
@@ -201,8 +219,8 @@ struct SettingsView: View {
                 + what
         }
         if accounts.isEmpty {
-            return "No other account (besides you and root) is in the admin group, so no one else can change these tools today. "
-                + "An administrator added later could.\n\n" + what
+            return "iMop found no other account (besides you and root) in the admin group. "
+                + "An administrator added later, or one iMop cannot see, could change these tools.\n\n" + what
         }
         return "These accounts can change Homebrew tools, and iMop would then run what they put there as you: "
             + accounts.joined(separator: ", ") + ".\n\n" + what

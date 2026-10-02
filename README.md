@@ -81,7 +81,7 @@ v1.1 replaces the v1.0 scanner and deletion code with **SafeClean**:
   again immediately before it is acted on.
 - **Vendor cleanup commands.** For tools such as npm, Docker or the iOS Simulator, iMop runs the
   tool's own cleanup command (exact, allow-listed argument arrays, never a shell). Tools in a folder
-  that other accounts can change are not run. A default Homebrew install is such a folder
+  that other accounts can change (by its permissions or by an access-control list) are not run. A default Homebrew install is such a folder
   (`/opt/homebrew/bin` and its other folders can be changed by every account in the `admin` group), so
   by default Homebrew and Homebrew-installed tools (brew, npm, yarn, pnpm, go, uv, pod, flutter, ...)
   are reported as unavailable, with the reason. You can allow them with Settings › **Trust Homebrew
@@ -222,10 +222,13 @@ scan; a plan built with different settings must be rebuilt before it can be conf
   until you turn this on; their rules show "… a folder other accounts can change. Turn on “Trust
   Homebrew tools” in Settings to allow it." When you turn it on, iMop first lists the other accounts
   that could change those tools (members of the `admin` group, not counting you and root) and asks you
-  to confirm with **Trust Homebrew Tools** (Cancel is the default). Even when on, iMop accepts only
-  Homebrew's own folders, owned by you, with group `admin`, and never a folder everyone can write to;
-  the tools themselves and every other check stay as strict as before. Turning it off is immediate.
-  Each change is recorded in the audit log.
+  to confirm with **Trust Homebrew Tools** (Cancel is the default). If the `admin` group includes
+  other groups (common on Macs managed by an organisation) or iMop cannot read it completely, the
+  dialog says the accounts could not be determined and warns more strongly. Even when on, iMop
+  accepts only Homebrew's own folders, owned by you, with group `admin`, and never a folder everyone
+  can write to; the tools themselves and every other check stay as strict as before. Turning it off is
+  immediate, also for a scan or cleanup that is already running: its remaining Homebrew commands are
+  refused. Each change is recorded in the audit log.
 - **Forget remembered drives:** iMop remembers which external drives it has seen. While a remembered
   drive is disconnected, Leftovers detection pauses (apps on that drive would look deleted).
 

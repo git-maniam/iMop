@@ -75,6 +75,13 @@ struct HomebrewTrustTests {
                           homebrewPrefixes: prefixes ?? [prefix], adminGroupID: adminGroupID)
         }
 
+        /// `prefix` as `secureResolve` reaches it (`/var/folders` → `/private/var/folders`).
+        var physicalPrefix: String {
+            guard let resolved = realpath(prefix, nil) else { return prefix }
+            defer { free(resolved) }
+            return String(cString: resolved)
+        }
+
         func cleanup() {
             for dir in [prefix, bin, cellarBin, strictBin, outsideBin, lookalikeBin] { chmod(dir, 0o755) }
             fixture.cleanup()
@@ -216,6 +223,11 @@ struct HomebrewTrustTests {
                     try TestSuite.assertEqual(ctx.runner(on: true, directories: dirs).resolveExecutable(tool), ctx.strictBin + "/" + tool, "\(tool) ON")
                     let reason = ctx.runner(on: false, directories: dirs).unavailableReason(for: tool)
                     try TestSuite.assertTrue(isTrustReason(reason), "\(tool): \(reason ?? "nil")")
+                    // Review: the message names the Homebrew folder that needs the setting (the
+                    // interpreter's, physical path), not the tool's own strict folder.
+                    try TestSuite.assertEqual(reason, CommandTrustPolicy.homebrewTrustRequiredMessage(tool: tool, uses: ctx.physicalPrefix),
+                                              "\(tool)")
+                    try TestSuite.assertFalse(reason?.contains(ctx.strictBin) ?? true, "\(tool): \(reason ?? "nil")")
                 }
                 // ON but the admin lookup failed → refused.
                 try TestSuite.assertNil(ctx.runner(on: true, directories: dirs, adminGroupID: nil).resolveExecutable("direct"))
@@ -369,7 +381,9 @@ struct HomebrewTrustTests {
             let gid: gid_t = 80
             func source(group: (gid: gid_t, members: [String])?, accounts: [(name: String, primaryGroupID: gid_t)]?,
                         me: String?) -> AdminGroupMembers.Source {
-                AdminGroupMembers.Source(adminGroup: { group }, accounts: { accounts }, currentUserName: { me })
+                AdminGroupMembers.Source(adminGroup: { group }, accounts: { accounts }, currentUserName: { me },
+                                         directoryRecord: { .init(groupID: gid, nestedGroups: [], memberUUIDs: []) },
+                                         accountName: { _ in nil })
             }
             let accounts: [(name: String, primaryGroupID: gid_t)] = [("bob", gid), ("me", gid), ("carol", 20), ("root", 0), ("alice", gid)]
             try TestSuite.assertEqual(AdminGroupMembers.members(from: source(group: (gid, ["root", "me", "alice", "dave"]), accounts: accounts, me: "me")),
@@ -379,6 +393,27 @@ struct HomebrewTrustTests {
             try TestSuite.assertNil(AdminGroupMembers.members(from: source(group: (gid, []), accounts: nil, me: "me")))
             // The user's own name unknown: nothing but root is removed (over-disclosing is the safe side).
             try TestSuite.assertEqual(AdminGroupMembers.members(from: source(group: (gid, ["root", "me"]), accounts: [], me: nil)), ["me"])
+            // Review: what `getgrnam` does not show. Member UUIDs are added by name; a nested group, a
+            // UUID that is not a user account, an unreadable record or another group id → unknown (nil).
+            let users = ["AAAA0000-0000-0000-0000-000000000001": "erin", "AAAA0000-0000-0000-0000-000000000002": "me"]
+            func directory(_ record: AdminGroupMembers.DirectoryRecord?) -> AdminGroupMembers.Source {
+                AdminGroupMembers.Source(adminGroup: { (gid, ["root", "alice"]) }, accounts: { [("bob", gid)] },
+                                         currentUserName: { "me" }, directoryRecord: { record }, accountName: { users[$0] })
+            }
+            try TestSuite.assertEqual(AdminGroupMembers.members(from: directory(.init(groupID: gid, nestedGroups: [],
+                                                                                        memberUUIDs: Array(users.keys)))),
+                                      ["alice", "bob", "erin"])
+            try TestSuite.assertNil(AdminGroupMembers.members(from: directory(.init(groupID: gid,
+                                                                                   nestedGroups: ["ABCDEFAB-CDEF-ABCD-EFAB-CDEF00000999"],
+                                                                                   memberUUIDs: []))), "nested group")
+            try TestSuite.assertNil(AdminGroupMembers.members(from: directory(.init(groupID: gid, nestedGroups: [],
+                                                                                   memberUUIDs: ["BBBB0000-0000-0000-0000-000000000009"]))),
+                                    "unknown member UUID")
+            try TestSuite.assertNil(AdminGroupMembers.members(from: directory(nil)), "unreadable record")
+            try TestSuite.assertNil(AdminGroupMembers.members(from: directory(.init(groupID: gid &+ 1, nestedGroups: [], memberUUIDs: []))),
+                                    "other group id")
+            try TestSuite.assertNil(AdminGroupMembers.members(from: directory(.init(groupID: nil, nestedGroups: [], memberUUIDs: []))),
+                                    "no group id")
             // The live lookup (read-only) never lists root or the current user.
             if let live = AdminGroupMembers.current() {
                 try TestSuite.assertFalse(live.contains("root"))
@@ -387,5 +422,148 @@ struct HomebrewTrustTests {
                 }
             }
         }
+
+        // MARK: Review regressions
+
+        await TestSuite.run("Command trust (review): an extended ACL that lets others write refuses a 0755 folder or file, ON or OFF; DENY entries are fine") {
+            try await withContext { ctx in
+                let aclBin = try ctx.fixture.dir("aclbin", base: .root)
+                try Context.setOwnGroup(aclBin, mode: 0o755)
+                try ctx.script("acltool", "echo acl", in: aclBin)
+                defer { try? clearACL(aclBin + "/acltool"); try? clearACL(aclBin) }
+                let dirs = [aclBin]
+                let roots = [aclBin]
+                func strict() -> CommandRunner { ctx.runner(on: false, directories: dirs, roots: roots) }
+                func relaxed() -> CommandRunner { ctx.runner(on: true, directories: dirs, roots: roots, prefixes: [ctx.prefix, aclBin]) }
+                try TestSuite.assertEqual(strict().resolveExecutable("acltool"), aclBin + "/acltool")
+                try TestSuite.assertTrue(strict().sanitizedPathDirectories().contains(aclBin))
+                // A DENY entry (like the home folder's `everyone deny delete`) changes nothing.
+                try setACL(aclBin, allow: false, [ACL_DELETE])
+                try TestSuite.assertEqual(strict().resolveExecutable("acltool"), aclBin + "/acltool", "deny entry")
+                // `everyone allow add_file,delete_child` on the folder → refused and not on PATH.
+                try setACL(aclBin, allow: true, [ACL_ADD_FILE, ACL_DELETE_CHILD])
+                try TestSuite.assertNil(strict().resolveExecutable("acltool"))
+                try TestSuite.assertFalse(strict().sanitizedPathDirectories().contains(aclBin))
+                try TestSuite.assertNil(relaxed().resolveExecutable("acltool"), "the Homebrew relaxation never covers an ACL")
+                try TestSuite.assertNil(strict().unavailableReason(for: "acltool"))
+                try clearACL(aclBin)
+                try TestSuite.assertEqual(strict().resolveExecutable("acltool"), aclBin + "/acltool")
+                // `everyone allow write` on the file → refused.
+                try setACL(aclBin + "/acltool", allow: true, [ACL_WRITE_DATA, ACL_APPEND_DATA])
+                try TestSuite.assertNil(strict().resolveExecutable("acltool"))
+                let refused = await ctx.runner(on: false, directories: dirs, roots: roots, entries: [ro("acltool", [])])
+                    .run(executable: aclBin + "/acltool", arguments: [], timeout: 10, purpose: .readOnly)
+                try TestSuite.assertEqual(refused.exitCode, -1)
+                try clearACL(aclBin + "/acltool")
+                // Only `writesecurity` (could grant itself anything) is refused too.
+                try setACL(aclBin + "/acltool", allow: true, [ACL_WRITE_SECURITY])
+                try TestSuite.assertNil(strict().resolveExecutable("acltool"))
+                try clearACL(aclBin + "/acltool")
+                try TestSuite.assertEqual(strict().resolveExecutable("acltool"), aclBin + "/acltool")
+            }
+        }
+
+        await TestSuite.run("Homebrew trust (review): assigning env.scanSettings re-applies the trust policy to the runner") {
+            try await withContext { ctx in
+                try await M1.withEnv { env in
+                    var on = ScanSettings.default
+                    on.trustHomebrewAdminWritableDirectories = true
+                    var environment = SafeCleanEnvironment(homeDirectory: URL(fileURLWithPath: env.fixture.home, isDirectory: true),
+                                                           fileSystem: env.fileSystem, processes: env.processes,
+                                                           runningApplications: env.runningApplications, applications: env.applications,
+                                                           volumes: env.volumes, commands: ctx.runner(on: false), clock: env.clock,
+                                                           effectiveUserID: env.effectiveUserID, userID: env.userID, scanSettings: on)
+                    try TestSuite.assertEqual(environment.commands.resolveExecutable("hbtool"), ctx.bin + "/hbtool")
+                    environment.scanSettings = .default
+                    try TestSuite.assertNil(environment.commands.resolveExecutable("hbtool"), "OFF after assigning default settings")
+                    try TestSuite.assertFalse(environment.commandTrustPolicy.relaxesHomebrewDirectories)
+                    environment.scanSettings = on
+                    try TestSuite.assertEqual(environment.commands.resolveExecutable("hbtool"), ctx.bin + "/hbtool", "ON again")
+                }
+            }
+        }
+
+        await TestSuite.run("Homebrew trust (review): a revoked switch turns the relaxation off for runners already handed out; ON never revives it") {
+            try await withContext { ctx in
+                try await M1.withEnv { env in
+                    var on = ScanSettings.default
+                    on.trustHomebrewAdminWritableDirectories = true
+                    let revocation = CommandTrustRevocation()
+                    let environment = SafeCleanEnvironment(homeDirectory: URL(fileURLWithPath: env.fixture.home, isDirectory: true),
+                                                           fileSystem: env.fileSystem, processes: env.processes,
+                                                           runningApplications: env.runningApplications, applications: env.applications,
+                                                           volumes: env.volumes, commands: ctx.runner(on: false), clock: env.clock,
+                                                           effectiveUserID: env.effectiveUserID, userID: env.userID, scanSettings: on)
+                        .with(commandTrustRevocation: revocation)
+                    let captured = environment.commands
+                    try TestSuite.assertEqual(captured.resolveExecutable("hbtool"), ctx.bin + "/hbtool")
+                    revocation.revoke()
+                    try TestSuite.assertNil(captured.resolveExecutable("hbtool"), "the captured runner tightens live")
+                    try TestSuite.assertFalse(captured.unavailableReason(for: "hbtool") == nil, "and explains why")
+                    let refused = await captured.run(executable: ctx.bin + "/hbtool", arguments: ["--version"], timeout: 10, purpose: .readOnly)
+                    try TestSuite.assertEqual(refused.exitCode, -1)
+                    // A revoked switch stays revoked.
+                    try TestSuite.assertTrue(revocation.isRevoked)
+                    try TestSuite.assertNil(environment.with(scanSettings: on).commands.resolveExecutable("hbtool"))
+                }
+            }
+        }
+
+        await TestSuite.run("AppState (review): turning Trust Homebrew tools OFF withdraws it from environments already handed out; turnOff audits off-main") {
+            try await AppStateTests.withContext { ctx in
+                let state = try await AppStateTests.scanned(ctx)
+                try TestSuite.assertFalse(state.currentCommandTrustPolicy.relaxesHomebrewDirectories)
+                state.setTrustHomebrewTools(true, disclosedAccounts: [])
+                let duringRun = state.currentCommandTrustPolicy
+                try TestSuite.assertTrue(duringRun.relaxesHomebrewDirectories)
+                state.turnOffTrustHomebrewTools()
+                try TestSuite.assertFalse(state.settings.trustHomebrewAdminWritableDirectories)
+                try TestSuite.assertFalse(duringRun.relaxesHomebrewDirectories, "a running scan/cleanup loses the relaxation at once")
+                try TestSuite.assertFalse(state.currentCommandTrustPolicy.relaxesHomebrewDirectories)
+                state.setTrustHomebrewTools(true, disclosedAccounts: ["x"])
+                try TestSuite.assertFalse(duringRun.relaxesHomebrewDirectories, "turning it ON again never revives an old run")
+                try TestSuite.assertTrue(state.currentCommandTrustPolicy.relaxesHomebrewDirectories)
+                state.turnOffTrustHomebrewTools()
+                state.turnOffTrustHomebrewTools() // no-op when already OFF
+                await state.waitUntilIdle()
+                let exportDir = try ctx.fixture.dir("Export", base: .root)
+                let destination = URL(fileURLWithPath: exportDir + "/imop-audit.jsonl")
+                try await state.exportAuditLog(to: destination)
+                let lines = try String(contentsOf: destination, encoding: .utf8).split(separator: "\n")
+                    .filter { $0.contains(AppState.trustHomebrewAuditAction) }
+                try TestSuite.assertEqual(lines.count, 4, "\(lines)")
+                try TestSuite.assertTrue(lines[1].contains("\"disabled\"") && lines[1].contains("Other accounts in the admin group"), String(lines[1]))
+                try TestSuite.assertTrue(lines[3].contains("\"disabled\""), String(lines[3]))
+                // The disclosure is computed off the main actor and never lists root.
+                let disclosure = await state.loadHomebrewTrustDisclosure()
+                try TestSuite.assertFalse(disclosure?.contains("root") ?? false)
+            }
+        }
     }
+}
+
+/// Sets one `everyone allow|deny <permissions>` extended ACL entry on a FIXTURE path (replacing any).
+private func setACL(_ path: String, allow: Bool, _ permissions: [acl_perm_t]) throws {
+    var acl: acl_t? = acl_init(1)
+    guard acl != nil else { throw TestError("acl_init") }
+    defer { if let acl { acl_free(UnsafeMutableRawPointer(acl)) } }
+    var entry: acl_entry_t?
+    guard acl_create_entry(&acl, &entry) == 0, let entry else { throw TestError("acl_create_entry") }
+    guard acl_set_tag_type(entry, allow ? ACL_EXTENDED_ALLOW : ACL_EXTENDED_DENY) == 0 else { throw TestError("acl_set_tag_type") }
+    // The well-known "everyone" group.
+    guard let everyone = UUID(uuidString: "ABCDEFAB-CDEF-ABCD-EFAB-CDEF0000000C") else { throw TestError("uuid") }
+    var guid = guid_t(g_guid: everyone.uuid)
+    guard acl_set_qualifier(entry, &guid) == 0 else { throw TestError("acl_set_qualifier") }
+    var permset: acl_permset_t?
+    guard acl_get_permset(entry, &permset) == 0, let permset else { throw TestError("acl_get_permset") }
+    for permission in permissions { guard acl_add_perm(permset, permission) == 0 else { throw TestError("acl_add_perm") } }
+    guard acl_set_permset(entry, permset) == 0 else { throw TestError("acl_set_permset") }
+    guard acl_set_link_np(path, ACL_TYPE_EXTENDED, acl) == 0 else { throw TestError("acl_set_link_np \(path): \(errno)") }
+}
+
+/// Removes every extended ACL entry from a FIXTURE path.
+private func clearACL(_ path: String) throws {
+    guard let acl = acl_init(0) else { throw TestError("acl_init") }
+    defer { acl_free(UnsafeMutableRawPointer(acl)) }
+    guard acl_set_link_np(path, ACL_TYPE_EXTENDED, acl) == 0 else { throw TestError("clear acl \(path): \(errno)") }
 }
